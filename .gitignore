@@ -1,0 +1,6 @@
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class 
+test.ipynb
+setup.py
