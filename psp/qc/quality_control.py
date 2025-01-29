@@ -367,8 +367,8 @@ def dead_cell_qc(adata: ad.AnnData, count_MADs: int = 5, mt_MADs: int = 3, ribo_
     def is_outlier(adata: ad.AnnData, metric: str, nmads: int) -> np.ndarray:
         """Identify outliers based on the specified metric and number of MADs."""
         M = adata.obs[metric]
-        return (M < np.median(M) - nmads * sp.stats.median_abs_deviation(M)) | (
-            M > np.median(M) + nmads * sp.stats.median_abs_deviation(M)
+        return (M < np.median(M) - nmads * stats.median_abs_deviation(M)) | (
+            M > np.median(M) + nmads * stats.median_abs_deviation(M)
         )
 
     # Determine outliers based on the specified metrics and MADs
@@ -527,3 +527,113 @@ def plot_cells_per_guide_distribution(adata: ad.AnnData) -> None:
     total_perts = len(gRNA_counts_df)
     over_50 = len(gRNA_counts_df[gRNA_counts_df['count'] >= 50])
     print(f"Number of perturbations with >= 50 cells with single guide assigned: {over_50}/{total_perts} ({100 * (over_50 / total_perts):.2f}%)")
+
+
+def default_qc(input_dict: dict) -> ad.AnnData:
+    """
+    Performs the default quality control pipeline.
+    
+    Parameters:
+    ----------
+    input_dict : dict
+        Dictionary containing the following required keys:
+        - 'mtx_dir': Path to the filtered_matrix_mex directory
+        - 'save_directory': Path where to save the .h5mu file after reading in the 10x matrix
+        - 'protospacer_calls_file': Path to protospacer_calls_per_cell.csv
+        - 'aggregation_csv': Path to aggregation_csv file
+        - 'cell_type': String describing the cell type
+        - 'perturbation_type': String describing the perturbation type
+        - 'pre_qc_save_path': Path where to save the data after sgRNA assignment but before QC filtering
+        - 'final_save_path': Path where to save the final QC-filtered data
+        
+    Optional parameters in input_dict:
+        - 'mt_MADs': Number of MADs for mitochondrial filtering (default: 5)
+        - 'count_MADs': Number of MADs for count filtering (default: 5)
+        - 'ribo_MADs': Number of MADs for ribosomal filtering (default: 5)
+        - 'treatment_dict': Dictionary mapping cell barcodes to treatments
+        
+    Returns:
+    -------
+    ad.AnnData
+        Processed and quality-controlled AnnData object
+    """
+    # Validate required inputs
+    required_keys = [
+        'mtx_dir', 'save_directory', 'protospacer_calls_file',
+        'aggregation_csv', 'cell_type', 'perturbation_type',
+        'pre_qc_save_path', 'final_save_path'
+    ]
+    
+    for key in required_keys:
+        if key not in input_dict:
+            raise ValueError(f"Missing required key in input_dict: {key}")
+    
+    # Read in the 10x matrix data
+    print("Reading 10x matrix data...")
+    mdata = read_in_10x_mtx(
+        input_dict['mtx_dir'],
+        input_dict['save_directory']
+    )
+    
+    # Extract RNA data
+    print("Extracting RNA data...")
+    adata = mdata.mod["rna"]
+    
+    # Assign protospacers
+    print("Assigning protospacers...")
+    adata = assign_protospacers(
+        adata,
+        protospacer_calls_file_path=input_dict['protospacer_calls_file']
+    )
+    
+    # Create channel dictionary from aggregation CSV
+    print("Creating channel dictionary...")
+    d = pd.read_csv(input_dict['aggregation_csv'])
+    channel_dict = {str(i+1): channel for i, channel in enumerate(d["sample_id"])}
+    
+    # Get optional treatment dictionary
+    treatment_dict = input_dict.get('treatment_dict', None)
+    
+    # Assign metadata
+    print("Assigning metadata...")
+    adata = assign_metadata(
+        adata=adata,
+        cell_type=input_dict['cell_type'],
+        perturbation_type=input_dict['perturbation_type'],
+        channel_dict=channel_dict,
+        treatment_dict=treatment_dict
+    )
+    
+    # Convert n_gRNA_UMIs to string
+    adata.obs['n_gRNA_UMIs'] = adata.obs['n_gRNA_UMIs'].astype(str)
+    
+    # Save data after sgRNA assignment but before QC
+    print(f"Saving pre-QC data to {input_dict['pre_qc_save_path']}...")
+    adata.write(input_dict['pre_qc_save_path'])
+    
+    # Perform general QC
+    print("Performing general QC...")
+    adata = general_qc(adata)
+    
+    # Perform dead cell QC
+    print("Performing dead cell QC...")
+    mt_MADs = input_dict.get('mt_MADs', 5)
+    count_MADs = input_dict.get('count_MADs', 5)
+    ribo_MADs = input_dict.get('ribo_MADs', 5)
+    
+    adata = dead_cell_qc(
+        adata,
+        mt_MADs=mt_MADs,
+        count_MADs=count_MADs,
+        ribo_MADs=ribo_MADs
+    )
+    
+    # Perform doublet detection sanity check
+    print("Performing doublet detection sanity check...")
+    doublet_detection_sanity_check(adata)
+    
+    # Save final file
+    print(f"Saving final QC file to {input_dict['final_save_path']}...")
+    adata.write(input_dict['final_save_path'])
+    
+    return adata
