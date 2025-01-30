@@ -13,6 +13,7 @@ from plotnine import (
     scale_fill_manual, geom_histogram, labs, theme,
     element_text, scale_y_continuous
 )
+from IPython.display import display
 
 # Statistics
 from scipy import stats
@@ -143,6 +144,31 @@ def _get_perturbed_view(adata: ad.AnnData) -> ad.AnnData:
     """
     return adata[adata.obs.perturbed == "True"]
 
+def _make_counts_layer(adata: ad.AnnData) -> None:
+    """
+    Create a 'counts' layer in the AnnData object by copying the data from adata.X.
+
+    Parameters:
+    adata (AnnData): The AnnData object to be modified.
+
+    Returns:
+    None
+    """
+    adata.layers["counts"] = adata.X.copy()
+
+
+def _assign_batch_id(adata: ad.AnnData) -> None:
+    """
+    Assign a 'batch' ID to the AnnData object by extracting the first part of each label in adata.obs.channel.
+
+    Parameters:
+    adata (AnnData): The AnnData object to be modified.
+
+    Returns:
+    None
+    """
+    adata.obs["batch"] = [label.split('-')[0] for label in adata.obs.channel]
+
 
 # Data Processing Functions
 def read_in_10x_mtx(mtx_dir, save_filepath, ntc_delimeter="Non-Targeting") -> ad.AnnData:
@@ -242,7 +268,7 @@ def assign_metadata(adata, cell_type, perturbation_type, subset_to_1_gRNA=True, 
     - cell_type: String representing the cell type to assign.
     - perturbation_type: String representing the perturbation type to assign.
     - subset_to_1_gRNA: Boolean indicating whether to subset the data to cells with exactly one gRNA (default is True).
-    - channel_dict: Optional dictionary mapping cell barcodes to channels (e.g. the original channel they originated from in the 10x Genomics chip).
+    - channel_dict: Optional dictionary mapping cell barcodes to channels (e.g. the original channel they originated from in the 10x Genomics chip). If there is a batch, it should be the first part of the channel name. An example naming convention is BATCH-Chip-X-Channel-Y.
     - treatment_dict: Optional dictionary mapping cell barcodes to treatments.
 
     Returns:
@@ -266,10 +292,15 @@ def assign_metadata(adata, cell_type, perturbation_type, subset_to_1_gRNA=True, 
     # Assign channel information if provided
     if channel_dict is not None:
         adata.obs["channel"] = [channel_dict[cell.split('-')[1]] for cell in adata.obs.index]
+        _assign_batch_id(adata)
+    
 
     # Assign treatment information if provided
     if treatment_dict is not None:
         adata.obs["treatment"] = [treatment_dict[cell.split('-')[1]] for cell in adata.obs.index]
+
+    # Make counts layer
+    _make_counts_layer(adata)
 
     return adata
 

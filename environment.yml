@@ -15,3 +15,7 @@ dependencies:
   - scikit-learn
   - joblib
   - tqdm
+  - ipython
+  - sphinx
+  - sphinx_rtd_theme  # Optional: A popular theme for Sphinx documentation
+  - myst-parser       # Optional: If you want to include Markdown files
