@@ -118,7 +118,7 @@ def _read_gtf(gtf_path: str) -> pd.DataFrame:
     return genes
 
 
-def _get_ntc_view(adata: anndata.AnnData) -> anndata.AnnData:
+def _get_ntc_view(adata: ad.AnnData) -> ad.AnnData:
     """
     Returns a view of the AnnData object with non-perturbed cells.
 
@@ -131,7 +131,7 @@ def _get_ntc_view(adata: anndata.AnnData) -> anndata.AnnData:
     return adata[adata.obs.perturbed == "False"]
 
 
-def _get_perturbed_view(adata: anndata.AnnData) -> anndata.AnnData:
+def _get_perturbed_view(adata: ad.AnnData) -> ad.AnnData:
     """
     Returns a view of the AnnData object with perturbed cells.
 
@@ -274,7 +274,7 @@ def assign_metadata(adata, cell_type, perturbation_type, subset_to_1_gRNA=True, 
     return adata
 
 
-def identify_coding_genes(adata: anndata.AnnData, gtf_path: str, subset_to_coding_genes: bool = False) -> anndata.AnnData:
+def identify_coding_genes(adata: ad.AnnData, gtf_path: str, subset_to_coding_genes: bool = False) -> ad.AnnData:
     """
     Identifies and optionally subsets coding genes in the AnnData object.
 
