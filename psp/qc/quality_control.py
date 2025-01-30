@@ -34,6 +34,14 @@ import time
 sc.settings.verbosity = 4
 sc.settings.set_figure_params(dpi=100, facecolor='white')
 
+# Import plotting functions
+from pl.plotting import (
+    plot_gRNA_distribution,
+    plot_gRNA_UMI_distribution,
+    plot_cells_per_guide_distribution,
+    doublet_detection_sanity_check
+)
+
 # Utility Functions
 def _data_statistics(adata_gex, adata_crispr, ntc_delimeter="Non-Targeting") -> None:
     """
@@ -170,6 +178,71 @@ def _assign_batch_id(adata: ad.AnnData) -> None:
     adata.obs["batch"] = [label.split('-')[0] for label in adata.obs.channel]
 
 
+def __gene_ids_to_ensg(filepath: str) -> dict:
+        """
+        Reads a file and returns a dictionary mapping gene names to Ensembl IDs.
+
+        Parameters:
+        - filepath: Path to the file containing gene-to-Ensembl ID mappings.
+
+        Returns:
+        - A dictionary with gene names as keys and Ensembl IDs as values.
+        """
+        ensembl_ids = {}
+        with open(filepath, 'r') as file:
+            for line in file:
+                gene, ensg = line.strip().split('\t')
+                ensembl_ids[gene] = ensg
+        return ensembl_ids
+
+
+def __remove_invalid_gene_targets(
+    adata: ad.AnnData, 
+    obs_key: str, 
+    var_key: str, 
+    whitelist: list[str] | set[str] = ["NTC"]
+) -> ad.AnnData:
+    """
+    Removes cells from the AnnData object where the gene target in `obs` is not present in `var`,
+    except for those in a provided whitelist.
+
+    Parameters:
+    - adata (anndata.AnnData): The AnnData object to be modified.
+    - obs_key (str): The key in `adata.obs` corresponding to gene target identifiers.
+    - var_key (str): The key in `adata.var` corresponding to gene IDs in ENSEMBL format.
+    - whitelist (list or set of str): Gene targets that are allowed even if they are not in `var` (default is ["NTC"]).
+
+    Returns:
+    - anndata.AnnData: The modified AnnData object with invalid gene targets removed.
+    """
+    # Ensure obs_key exists in .obs and var_key exists in .var
+    if obs_key not in adata.obs.columns:
+        raise ValueError(f"{obs_key} not found in .obs.")
+    if var_key not in adata.var.columns:
+        raise ValueError(f"{var_key} not found in .var.")
+
+    # Create a set of valid gene IDs from .var
+    valid_gene_ids = set(adata.var[var_key].values)
+
+    # If a whitelist is provided, add it to the valid_gene_ids set
+    if not isinstance(whitelist, (list, set)):
+        raise ValueError("Whitelist must be a list or set of gene targets.")
+    valid_gene_ids.update(whitelist)
+
+    # Identify invalid gene targets that are not in the valid_gene_ids set
+    invalid_mask = ~adata.obs[obs_key].isin(valid_gene_ids)
+    invalid_genes = adata.obs.loc[invalid_mask, obs_key].unique()
+
+    # Print a warning if there are any invalid gene targets
+    if invalid_genes.size > 0:
+        print(f"Warning: The following gene targets were not found in var[{var_key}] and are not in the whitelist. They will be dropped:")
+        for gene in invalid_genes:
+            print(f"  - {gene}")
+
+    # Drop cells with invalid gene targets
+    return adata[~invalid_mask].copy()
+
+
 # Data Processing Functions
 def read_in_10x_mtx(mtx_dir, save_filepath, ntc_delimeter="Non-Targeting") -> ad.AnnData:
     """
@@ -259,20 +332,62 @@ def assign_protospacers(adata, protospacer_calls_file_path, NTC_Delimiter="Non-T
     return adata
 
 
-def assign_metadata(adata, cell_type, perturbation_type, subset_to_1_gRNA=True, channel_dict=None, treatment_dict=None) -> ad.AnnData:
+def assign_gene_ids(adata: ad.AnnData, gene_id_filepath: str, obs_key: str = "gene_target_ensembl_id", var_key: str = "gene_ids", ntc_label: str = "NTC") -> None:
     """
-    Assigns metadata to the AnnData object.
+    Assigns gene IDs to the AnnData object based on a provided file mapping gene names to Ensembl IDs.
+
+    Parameters:
+    - adata: AnnData object to be modified.
+    - gene_id_filepath: Path to the file containing gene-to-Ensembl ID mappings.
+    - obs_key: The key in .obs where the gene_target_ensembl_id will be stored (default is "gene_target_ensembl_id").
+    - var_key: The key in .var corresponding to gene_ids in ENSEMBL format (default is "gene_ids").
+    - ntc_label: Label for non-targeting controls (default is "NTC").
+
+    Returns:
+    - None
+    """
+    
+
+    # Map gene names to Ensembl IDs
+    gene_to_ensembl_ids = __gene_ids_to_ensg(filepath=gene_id_filepath)
+    gene_to_ensembl_ids[ntc_label] = ntc_label  # Ensure NTC is included in the mapping
+
+    # Assign Ensembl IDs to the AnnData object
+    adata.obs[obs_key] = [gene_to_ensembl_ids.get(gene, ntc_label) for gene in adata.obs["gene_target"]]
+
+    # Remove invalid gene targets
+    adata = __remove_invalid_gene_targets(adata, obs_key=obs_key, var_key=var_key)
+
+
+def assign_metadata(
+    adata: ad.AnnData, 
+    cell_type: str, 
+    perturbation_type: str, 
+    subset_to_1_gRNA: bool = True, 
+    channel_dict: dict = None, 
+    treatment_dict: dict = None,
+    gene_id_filepath: str = None,
+    obs_key: str = "gene_target_ensembl_id",
+    var_key: str = "gene_ids",
+    ntc_label: str = "NTC"
+) -> ad.AnnData:
+    """
+    Assigns metadata to the AnnData object and assigns gene IDs.
 
     Parameters:
     - adata: AnnData object containing single-cell data.
     - cell_type: String representing the cell type to assign.
     - perturbation_type: String representing the perturbation type to assign.
     - subset_to_1_gRNA: Boolean indicating whether to subset the data to cells with exactly one gRNA (default is True).
-    - channel_dict: Optional dictionary mapping cell barcodes to channels (e.g. the original channel they originated from in the 10x Genomics chip). If there is a batch, it should be the first part of the channel name. An example naming convention is BATCH-Chip-X-Channel-Y.
+    - channel_dict: Optional dictionary mapping cell barcodes to channels.
     - treatment_dict: Optional dictionary mapping cell barcodes to treatments.
+    - gene_id_filepath: Path to the file containing gene-to-Ensembl ID mappings.
+    - obs_key: The key in .obs where the gene_target_ensembl_id will be stored (default is "gene_target_ensembl_id").
+    - var_key: The key in .var corresponding to gene_ids in ENSEMBL format (default is "gene_ids").
+    - ntc_label: Label for non-targeting controls (default is "NTC").
 
     Returns:
-    - Updated AnnData object with assigned metadata.
+    - Updated AnnData object with assigned metadata and gene IDs.
     """
     # Assign basic metadata
     adata.obs["celltype"] = cell_type
@@ -293,11 +408,13 @@ def assign_metadata(adata, cell_type, perturbation_type, subset_to_1_gRNA=True, 
     if channel_dict is not None:
         adata.obs["channel"] = [channel_dict[cell.split('-')[1]] for cell in adata.obs.index]
         _assign_batch_id(adata)
-    
 
     # Assign treatment information if provided
     if treatment_dict is not None:
         adata.obs["treatment"] = [treatment_dict[cell.split('-')[1]] for cell in adata.obs.index]
+
+    # Assign gene IDs
+    assign_gene_ids(adata, gene_id_filepath, obs_key, var_key, ntc_label)
 
     # Make counts layer
     _make_counts_layer(adata)
@@ -428,137 +545,6 @@ def dead_cell_qc(adata: ad.AnnData, count_MADs: int = 5, mt_MADs: int = 3, ribo_
     return adata
 
 
-def doublet_detection_sanity_check(adata: ad.AnnData) -> None:
-    """
-    Perform a sanity check for doublet detection by plotting histograms of key metrics.
-
-    Parameters:
-    - adata: AnnData object containing single-cell data.
-
-    Returns:
-    - None
-    """
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-
-    sns.histplot(adata.obs["total_counts"], bins=100, ax=axes[0])
-    axes[0].set_title('Total Counts')
-
-    sns.histplot(adata.obs["n_genes_by_counts"], bins=100, ax=axes[1])
-    axes[1].set_title('Genes by Counts')
-
-    sns.histplot(adata.obs["n_genes"], bins=100, ax=axes[2])
-    axes[2].set_title('Number of Genes')
-
-    plt.tight_layout()
-    plt.show()
-
-
-# Visualization Functions
-def plot_gRNA_distribution(adata: ad.AnnData) -> None:
-    """
-    Plots the distribution of the number of gRNAs per cell and calculates statistics 
-    related to sgRNA calls and multiplet rates.
-
-    Parameters:
-    - adata: AnnData object containing the single-cell data with 'n_gRNA' in the observations.
-
-    This function creates a bar plot showing the distribution of gRNAs per cell, 
-    categorizing cells with more than 6 gRNAs as '>6'. It also prints the percentage 
-    of cells without confident sgRNA calls and the estimated multiplet rate.
-    """
-    # Create a DataFrame for the number of gRNAs per cell
-    df = pd.DataFrame(adata.obs['n_gRNA'], columns=['n_gRNA'])
-
-    # Categorize cells with more than 6 gRNAs as '>6'
-    df['n_gRNA'] = df['n_gRNA'].apply(lambda x: str(x) if x <= 6 else '>6')
-
-    # Define a colormap for the categories
-    categories = df['n_gRNA'].unique()
-    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
-    color_map = dict(zip(categories, colors[:len(categories)]))
-
-    # Create and display the bar plot
-    plot = (ggplot(df, aes(x='n_gRNA', fill='n_gRNA')) +
-            geom_bar() +
-            scale_fill_manual(values=color_map) +
-            ggtitle('Number of gRNA Assigned') +
-            xlab('n_gRNA') +
-            ylab('Count'))
-    plot.show()
-
-    # Calculate and print statistics
-    value_counts = df['n_gRNA'].value_counts()
-    no_guide = value_counts.get('0', 0)
-    one_guide = value_counts.get('1', 0)
-    total_guides = sum(value_counts)
-    no_call_rate = (no_guide / total_guides) * 100
-    multiplet_rate = ((total_guides - (no_guide + one_guide)) / total_guides) * 100
-
-    print(f"Cells without confident sgRNA calls: {no_call_rate:.2f}%")
-    print(f"Estimated Multiplet Rate: {multiplet_rate:.2f}%")
-
-
-def plot_gRNA_UMI_distribution(adata: ad.AnnData) -> None:
-    """
-    Plots the distribution of gRNA UMI counts for cells with exactly one sgRNA assigned.
-
-    Parameters:
-    - adata: AnnData object containing the single-cell data with 'n_gRNA' and 'n_gRNA_UMIs' in the observations.
-
-    This function creates a histogram showing the distribution of gRNA UMI counts for cells that have exactly one sgRNA assigned.
-    """
-    # Filter the AnnData object to include only cells with exactly one gRNA
-    adata_1_gRNA = adata[adata.obs['n_gRNA'] == 1, :]
-
-    # Create a DataFrame for the gRNA UMI counts
-    df = pd.DataFrame(adata_1_gRNA.obs['n_gRNA_UMIs'].astype(int), columns=['n_gRNA_UMIs'])
-
-    # Create and display the histogram
-    plot = (ggplot(df, aes(x='n_gRNA_UMIs')) +
-            geom_histogram(bins=50, fill='#AEC6CF') +
-            labs(title='gRNA UMI Counts For Cells with 1 sgRNA Assigned', x='gRNA UMI Counts', y='Counts'))
-    plot.show()
-
-
-def plot_cells_per_guide_distribution(adata: ad.AnnData) -> None:
-    """
-    Plots the distribution of cells per guide RNA (gRNA) for cells with exactly one gRNA assigned.
-
-    Parameters:
-    - adata: AnnData object containing single-cell data with 'n_gRNA' and 'gene_target' in the observations.
-
-    This function creates a bar plot showing the number of cells per perturbation target, excluding the 'NTC' (Non-Targeting Control) category.
-    It also prints the number and percentage of perturbations with at least 50 cells assigned to a single guide.
-    """
-    # Filter the AnnData object to include only cells with exactly one gRNA
-    adata_1_gRNA = adata[adata.obs['n_gRNA'] == 1, :]
-
-    # Count the occurrences of each gene target
-    gRNA_counts = adata_1_gRNA.obs['gene_target'].value_counts()
-
-    # Convert the counts to a DataFrame for plotting
-    gRNA_counts_df = gRNA_counts.reset_index()
-    gRNA_counts_df.columns = ['gene_target', 'count']
-
-    # Extract and remove the count for the 'NTC' category
-    ntc_count = gRNA_counts_df.loc[gRNA_counts_df['gene_target'] == 'NTC', 'count'].values[0]
-    gRNA_counts_df = gRNA_counts_df[gRNA_counts_df['gene_target'] != 'NTC']
-
-    # Plot the data using plotnine
-    plot = (ggplot(gRNA_counts_df, aes(x='reorder(gene_target, -count)', y='count')) +
-            geom_bar(stat='identity', fill='#FFD1DC') +
-            theme(axis_text_x=element_text(rotation=90, hjust=1), figure_size=(20, 6)) +
-            scale_y_continuous(breaks=range(0, max(gRNA_counts_df['count']) + 50, 50)) +
-            ggtitle(f'Number of Cells per Single Perturbation Target; {ntc_count} NTC Cells') +
-            xlab('Perturbation Target') +
-            ylab('Number of Cells'))
-    plot.show()
-
-    # Calculate and print statistics about perturbations
-    total_perts = len(gRNA_counts_df)
-    over_50 = len(gRNA_counts_df[gRNA_counts_df['count'] >= 50])
-    print(f"Number of perturbations with >= 50 cells with single guide assigned: {over_50}/{total_perts} ({100 * (over_50 / total_perts):.2f}%)")
-
 
 def default_qc(input_dict: dict) -> ad.AnnData:
     """
@@ -576,6 +562,10 @@ def default_qc(input_dict: dict) -> ad.AnnData:
         - 'perturbation_type': String describing the perturbation type
         - 'pre_qc_save_path': Path where to save the data after sgRNA assignment but before QC filtering
         - 'final_save_path': Path where to save the final QC-filtered data
+        - 'gene_id_filepath': Path to the file containing gene-to-Ensembl ID mappings
+        - 'obs_key': The key in .obs where the gene_target_ensembl_id will be stored
+        - 'var_key': The key in .var corresponding to gene_ids in ENSEMBL format
+        - 'ntc_label': Label for non-targeting control cells in the gene_id_filepath
         
     Optional parameters in input_dict:
         - 'mt_MADs': Number of MADs for mitochondrial filtering (default: 5)
@@ -592,7 +582,8 @@ def default_qc(input_dict: dict) -> ad.AnnData:
     required_keys = [
         'mtx_dir', 'save_directory', 'protospacer_calls_file',
         'aggregation_csv', 'cell_type', 'perturbation_type',
-        'pre_qc_save_path', 'final_save_path'
+        'pre_qc_save_path', 'final_save_path',
+        'gene_id_filepath', 'obs_key', 'var_key', 'ntc_label'
     ]
     
     for key in required_keys:
@@ -632,7 +623,11 @@ def default_qc(input_dict: dict) -> ad.AnnData:
         cell_type=input_dict['cell_type'],
         perturbation_type=input_dict['perturbation_type'],
         channel_dict=channel_dict,
-        treatment_dict=treatment_dict
+        treatment_dict=treatment_dict,
+        gene_id_filepath=input_dict['gene_id_filepath'],
+        obs_key=input_dict['obs_key'],
+        var_key=input_dict['var_key'],
+        ntc_label=input_dict['ntc_label']
     )
     
     # Convert n_gRNA_UMIs to string
