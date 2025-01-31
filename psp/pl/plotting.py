@@ -8,7 +8,7 @@ from plotnine import (
     scale_fill_manual, geom_histogram, labs, theme,
     element_text, scale_y_continuous
 )
-
+import psp.utils as utils
 
 def plot_cells_per_perturbation(adata: ad.AnnData, perturbation_key: str = 'gene_target', perturbed_key: str = 'perturbed', highlight_threshold: int = 100, y_max: int = 600) -> plt.Figure:
     """
@@ -220,4 +220,58 @@ def doublet_detection_sanity_check(adata: ad.AnnData) -> None:
     axes[2].set_title('Number of Genes')
     plt.tight_layout()
     plt.show()
+
+
+def plot_sorted_bars(
+    data: pd.Series,
+    ylabel: str,
+    title: str,
+    repression_threshold: float = None,
+    cells_threshold: int = None,
+    label_interval: int = 100,
+    invert_y: bool = False
+) -> plt.Figure:
+    """
+    Plots sorted bar charts for knockdown efficiency or cell counts per sgRNA.
+    
+    Parameters:
+    - data: Pandas Series with sgRNA names as index and values to plot
+    - ylabel: Label for Y-axis
+    - title: Plot title
+    - repression_threshold: Optional threshold line for repression percentage
+    - cells_threshold: Optional threshold line for cell counts
+    - label_interval: Interval for x-axis labels
+    - invert_y: Whether to invert Y-axis
+    
+    Returns:
+    - matplotlib Figure object
+    """
+    sorted_items = data.sort_values(ascending=False)
+    keys = sorted_items.index.tolist()
+    values = sorted_items.values.tolist()
+
+    fig, ax = plt.subplots(figsize=(20, 8))
+    ax.bar(keys, values, color='skyblue')
+    
+    if repression_threshold is not None:
+        ax.axhline(repression_threshold, color='skyblue', ls=':')
+    if cells_threshold is not None:
+        ax.axhline(cells_threshold, color='skyblue', ls=':')
+    
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    plt.xticks(rotation=45, ha="right", fontsize=10)
+    plt.yticks(fontsize=12)
+    
+    if invert_y:
+        ax.invert_yaxis()
+    
+    ax.grid(axis='y', linestyle='--', alpha=0.7)
+    ax.grid(axis='x', visible=False)
+    
+    plt.xticks(ticks=range(0, len(keys), label_interval), 
+               labels=[keys[i] for i in range(0, len(keys), label_interval)])
+    
+    plt.tight_layout()
+    return fig
 

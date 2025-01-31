@@ -5,6 +5,9 @@ import scanpy as sc
 import matplotlib.pyplot as plt
 import numpy as np
 import requests
+import psp.utils as utils
+import psp.pl as pl
+
 
 def get_NTCs_from_whitelist(adata: ad.AnnData, whitelist_path: str) -> ad.AnnData:
     """
@@ -166,4 +169,247 @@ def clean_ntc_cells(adata: ad.AnnData, contamination_threshold: float = 0.3, NTC
     return adata
 
 
+def evaluate_per_sgRNA_knockdown(
+    adata: ad.AnnData,
+    repression_threshold: float = 30.0,
+    cells_per_gRNA_threshold: int = 25,
+    label_interval: int = 100,
+    batch_aware: bool = True
+) -> ad.AnnData:
+    """
+    Evaluates sgRNA knockdown efficiency and filters cells/guides based on quality thresholds.
+    
+    Processes data in batches if batch information exists and batch_aware is True.
+    
+    Parameters:
+    - adata: AnnData object containing:
+        - 'gRNA' in obs: sgRNA assignments per cell
+        - 'target_knockdown' in obs: knockdown efficiency values
+        - 'perturbed' in obs: boolean indicating perturbation status
+        - 'batch' in obs (optional): batch information
+    - repression_threshold: Minimum required median knockdown percentage
+    - cells_per_gRNA_threshold: Minimum cells required per sgRNA
+    - label_interval: X-axis label display interval for plots
+    - batch_aware: Process batches separately if batch information exists
+    
+    Returns:
+    - Filtered AnnData object with quality-controlled cells and guides
+    """
+    # Validate input structure
+    utils.validate_anndata(adata, required_obs=['gRNA', 'target_knockdown', 'perturbed'])
+    
+    # Split and process batches if applicable
+    if batch_aware and 'batch' in adata.obs:
+        batches = utils.__split_by_batch(adata, copy=True)
+        processed = []
+        
+        for batch_name, batch_adata in batches.items():
+            print(f"Processing batch: {batch_name}")
+            processed.append(
+                _process_batch(
+                    batch_adata,
+                    repression_threshold,
+                    cells_per_gRNA_threshold,
+                    label_interval
+                )
+            )
+            
+        adata = ad.concat(processed, merge='same', join='inner')
+    else:
+        adata = _process_batch(adata, repression_threshold, 
+                             cells_per_gRNA_threshold, label_interval)
 
+    # Final filtering and visualization
+    adata_perturbed = qc._get_perturbed_view(adata)
+    pl.plotting.plot_sorted_bars(
+        adata_perturbed.obs.gRNA.value_counts(),
+        ylabel="Number of Cells per gRNA",
+        title="Final Cell Counts per Guide",
+        cells_threshold=cells_per_gRNA_threshold,
+        label_interval=label_interval
+    )
+    
+    return adata
+
+def _process_batch(
+    batch_adata: ad.AnnData,
+    repression_threshold: float,
+    cells_threshold: int,
+    label_interval: int
+) -> ad.AnnData:
+    """Process a single batch of data"""
+    # Calculate median knockdown percentages
+    median_knockdown = 100 * batch_adata.obs.groupby("gRNA")["target_knockdown"].mean()
+    non_ntc = median_knockdown[~median_knockdown.index.str.contains("Non-Targeting")]
+    
+    # Plot knockdown distribution
+    pl.plotting.plot_sorted_bars(
+        median_knockdown,
+        ylabel="Mean Knockdown per Cell (%)",
+        title="sgRNA Knockdown Efficiency",
+        repression_threshold=repression_threshold,
+        invert_y=True,
+        label_interval=label_interval
+    )
+    
+    # Filter low-efficiency guides
+    invalid_guides = [
+        g for g, val in median_knockdown.items()
+        if "Non-Targeting" not in g and val <= repression_threshold
+    ]
+    batch_adata = _filter_guides(batch_adata, invalid_guides, "repression")
+    
+    # Filter cells with negative knockdown
+    invalid_cells = (batch_adata.obs["target_knockdown"] < 0) & (batch_adata.obs.perturbed == "True")
+    batch_adata = batch_adata[~invalid_cells].copy()
+    
+    # Filter guides with low cell counts
+    guide_counts = batch_adata[batch_adata.obs.perturbed == "True"].obs.gRNA.value_counts()
+    low_count_guides = guide_counts[guide_counts <= cells_threshold].index.tolist()
+    return _filter_guides(batch_adata, low_count_guides, "cell count")
+
+def _filter_guides(adata: ad.AnnData, guides: list, filter_type: str) -> ad.AnnData:
+    """Helper function to filter guides with logging"""
+    if not guides:
+        return adata
+        
+    print(f"Removing {len(guides)} guides due to low {filter_type}")
+    mask = adata.obs.gRNA.isin(guides)
+    print(f"Guides before filtering: {len(adata.obs.gRNA.unique())}")
+    adata = adata[~mask].copy()
+    print(f"Guides after filtering: {len(adata.obs.gRNA.unique())}")
+    return adata
+
+def knockdown_qc(
+    adata: ad.AnnData,
+    obs_key: str = "gene_ids",
+    var_key: str = "gene_target_ensembl_id",
+    gene_target_expr_col: str = "gene_target_expression (CPM)",
+    ntc_target_expr_col: str = "NTC_target_gene_expression (CPM)",
+    knockdown_col: str = "target_knockdown",
+    zscore_col: str = "target_knockdown_z_score",
+    ntc_label: str = "NTC",
+    layer: str = "counts",
+    normalized_layer: str = "normalized_counts",
+    batch_aware: bool = True
+) -> ad.AnnData:
+    """
+    Calculate knockdown metrics with batch-aware processing.
+    
+    Parameters:
+    - adata: AnnData object with single-cell data
+    - obs_key: Column in obs containing target gene IDs
+    - var_key: Column in var containing ENSEMBL IDs
+    - gene_target_expr_col: Name for target expression column
+    - ntc_target_expr_col: Name for NTC expression column  
+    - knockdown_col: Name for knockdown efficiency column
+    - zscore_col: Name for z-score column
+    - ntc_label: Label indicating NTC guides
+    - layer: Layer containing raw counts
+    - normalized_layer: Layer to store normalized counts
+    - batch_aware: Process batches separately if batch column exists
+    
+    Returns:
+    - AnnData object with calculated metrics and quality controls
+    """
+    # Validate input structure
+    utils.validate_anndata(adata, required_obs=[obs_key, 'perturbed'], required_var=[var_key])
+
+    # Batch processing logic
+    if batch_aware and 'batch' in adata.obs:
+        batches = utils.__split_by_batch(adata, copy=True)
+        processed = []
+        
+        for batch_name, batch_adata in batches.items():
+            print(f"Processing batch: {batch_name}")
+            processed.append(
+                _process_batch_knockdown(
+                    batch_adata,
+                    obs_key,
+                    var_key,
+                    gene_target_expr_col,
+                    ntc_target_expr_col,
+                    knockdown_col,
+                    zscore_col,
+                    ntc_label,
+                    layer,
+                    normalized_layer
+                )
+            )
+            
+        adata = ad.concat(processed, merge='same', join='inner')
+    else:
+        adata = _process_batch_knockdown(
+            adata,
+            obs_key,
+            var_key,
+            gene_target_expr_col,
+            ntc_target_expr_col,
+            knockdown_col,
+            zscore_col,
+            ntc_label,
+            layer,
+            normalized_layer
+        )
+
+    return evaluate_per_sgRNA_knockdown(adata, batch_aware=batch_aware)
+
+def _process_batch_knockdown(
+    batch_adata: ad.AnnData,
+    obs_key: str,
+    var_key: str,
+    gene_target_expr_col: str,
+    ntc_target_expr_col: str,
+    knockdown_col: str,
+    zscore_col: str,
+    ntc_label: str,
+    layer: str,
+    normalized_layer: str
+) -> ad.AnnData:
+    """Process knockdown metrics for a single batch"""
+    # Copy and normalize counts
+    batch_adata.layers[normalized_layer] = batch_adata.layers[layer].copy()
+    sc.pp.normalize_total(batch_adata, target_sum=1e6, layer=normalized_layer)
+    
+    # Calculate target expressions
+    data = batch_adata.layers[normalized_layer]
+    var_dict = {gene: idx for idx, gene in enumerate(batch_adata.var[var_key].values)}
+    var_indices = batch_adata.obs[obs_key].map(var_dict).fillna(-1).astype(int).values
+    
+    # Initialize expression arrays
+    gene_expr = np.zeros(batch_adata.n_obs)
+    ntc_expr = np.zeros(batch_adata.n_obs)
+    
+    # Calculate NTC statistics
+    is_ntc = (batch_adata.obs[obs_key] == ntc_label).values
+    if np.any(is_ntc):
+        ntc_data = data[is_ntc]
+        ntc_mean = np.array(ntc_data.mean(axis=0)).flatten()
+        ntc_var = np.array(ntc_data.var(axis=0)).flatten()
+    else:
+        ntc_mean = np.zeros(batch_adata.shape[1])
+        ntc_var = np.ones(batch_adata.shape[1])
+    
+    # Assign expression values
+    valid_mask = var_indices >= 0
+    gene_expr[valid_mask] = np.array(data[np.arange(batch_adata.n_obs)[valid_mask], var_indices[valid_mask]]).flatten()
+    ntc_expr[valid_mask] = ntc_mean[var_indices[valid_mask]]
+    
+    # Calculate knockdown efficiency
+    with np.errstate(divide='ignore', invalid='ignore'):
+        knockdown = 1 - np.divide(gene_expr, ntc_expr, out=np.ones_like(gene_expr), where=ntc_expr != 0)
+    
+    # Calculate z-scores
+    zscores = np.zeros(batch_adata.n_obs)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        expr_diff = gene_expr[valid_mask] - ntc_expr[var_indices[valid_mask]]
+        var_mask = ntc_var[var_indices[valid_mask]] != 0
+        zscores[valid_mask] = np.where(var_mask, expr_diff / np.sqrt(ntc_var[var_indices[valid_mask]]), 0)
+    
+    # Store results
+    batch_adata.obs[gene_target_expr_col] = gene_expr
+    batch_adata.obs[ntc_target_expr_col] = ntc_expr
+    batch_adata.obs[knockdown_col] = knockdown
+    batch_adata.obs[zscore_col] = zscores
+    
+    return batch_adata
