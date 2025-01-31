@@ -85,73 +85,6 @@ def _data_statistics(adata_gex, adata_crispr, ntc_delimeter="Non-Targeting") -> 
     print(f"Average CRISPR UMIs per cell: {adata_crispr.X.sum() / len(adata_crispr.obs):,.2f}")
 
 
-def _read_gtf(gtf_path: str) -> pd.DataFrame:
-    """
-    Reads a GTF file and extracts gene information.
-
-    Parameters:
-    - gtf_path (str): Path to the GTF file.
-
-    Returns:
-    - pd.DataFrame: A DataFrame containing gene information with columns 'seqname', 'gene_name', 'gene_type', and 'gene_id'.
-    """
-    # Read the GTF file into a DataFrame
-    gtf = pd.read_table(
-        gtf_path,
-        comment="#",
-        sep="\t",
-        names=['seqname', 'source', 'feature', 'start', 'end', 'score', 'strand', 'frame', 'attribute']
-    )
-    
-    # Filter for gene features and select relevant columns
-    genes = gtf[gtf.feature == "gene"][['seqname', 'attribute']].copy().reset_index(drop=True)
-    
-    def _gene_info(attribute: str) -> tuple:
-        """
-        Extracts gene name, type, and ID from the attribute string.
-
-        Parameters:
-        - attribute (str): The attribute string from the GTF file.
-
-        Returns:
-        - tuple: A tuple containing gene name, gene type, and gene ID.
-        """
-        g_name = next(filter(lambda x: 'gene_name' in x, attribute.split(";"))).split(" ")[2].strip('"')
-        g_type = next(filter(lambda x: 'gene_type' in x, attribute.split(";"))).split(" ")[2].strip('"')
-        g_id = next(filter(lambda x: 'gene_id' in x, attribute.split(";"))).split(" ")[1].strip('"')
-        return g_name, g_type, g_id
-
-    # Apply the gene_info function to extract gene details
-    genes["gene_name"], genes["gene_type"], genes["gene_id"] = zip(*genes.attribute.apply(_gene_info))
-    
-    return genes
-
-
-def _get_ntc_view(adata: ad.AnnData) -> ad.AnnData:
-    """
-    Returns a view of the AnnData object with non-perturbed cells.
-
-    Parameters:
-    - adata (anndata.AnnData): The input AnnData object.
-
-    Returns:
-    - anndata.AnnData: A view of the AnnData object with non-perturbed cells.
-    """
-    return adata[adata.obs.perturbed == "False"]
-
-
-def _get_perturbed_view(adata: ad.AnnData) -> ad.AnnData:
-    """
-    Returns a view of the AnnData object with perturbed cells.
-
-    Parameters:
-    - adata (anndata.AnnData): The input AnnData object.
-
-    Returns:
-    - anndata.AnnData: A view of the AnnData object with perturbed cells.
-    """
-    return adata[adata.obs.perturbed == "True"]
-
 def _make_counts_layer(adata: ad.AnnData) -> None:
     """
     Create a 'counts' layer in the AnnData object by copying the data from adata.X.
@@ -419,28 +352,6 @@ def assign_metadata(
     # Make counts layer
     _make_counts_layer(adata)
 
-    return adata
-
-
-def identify_coding_genes(adata: ad.AnnData, gtf_path: str, subset_to_coding_genes: bool = False) -> ad.AnnData:
-    """
-    Identifies and optionally subsets coding genes in the AnnData object.
-
-    Parameters:
-    - adata (anndata.AnnData): The input AnnData object.
-    - gtf_path (str): Path to the GTF file. Default is set to a specific path.
-    - subset_to_coding_genes (bool): If True, subset the AnnData object to only include protein-coding genes. Default is False.
-
-    Returns:
-    - anndata.AnnData: The AnnData object with gene type information added and optionally subsetted to coding genes.
-    """
-    gtf = _read_gtf(gtf_path)
-    name_to_type = {k: v for k, v in zip(gtf['gene_id'], gtf['gene_type'])}
-    adata.var["gene_type"] = [name_to_type[idx] for idx in adata.var.gene_ids]
-    
-    if subset_to_coding_genes:
-        adata = adata[:, adata.var.gene_type == "protein_coding"].copy()
-    
     return adata
 
 

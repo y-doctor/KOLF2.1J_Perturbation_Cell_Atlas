@@ -21,7 +21,7 @@ def get_NTCs_from_whitelist(adata: ad.AnnData, whitelist_path: str) -> ad.AnnDat
     """
     with open(whitelist_path, 'r') as f:
         sgRNA_whitelist = f.read().splitlines()
-    ntc_adata = qc._get_ntc_view(adata)
+    ntc_adata = utils.get_ntc_view(adata)
     ntc_adata = ntc_adata[ntc_adata.obs.gRNA.isin(sgRNA_whitelist)].copy()
     return ntc_adata
 
@@ -146,7 +146,7 @@ def clean_ntc_cells(adata: ad.AnnData, contamination_threshold: float = 0.3, NTC
     assert 'perturbed' in adata.obs, "The AnnData object must have a 'perturbed' column in obs which indicates whether the cell is perturbed or not."
     assert 'batch' in adata.obs, "The AnnData object must have a 'batch' column in obs which indicates the batch the cell belongs to."
 
-    adata_ntc = qc._get_ntc_view(adata).copy()
+    adata_ntc = utils.get_ntc_view(adata).copy()
     print(f"Initial number of NTC Cells: {len(adata_ntc)}")
 
     if NTC_whitelist_path is not None:
@@ -200,7 +200,7 @@ def evaluate_per_sgRNA_knockdown(
     
     # Split and process batches if applicable
     if batch_aware and 'batch' in adata.obs:
-        batches = utils.__split_by_batch(adata, copy=True)
+        batches = utils.split_by_batch(adata, copy=True)
         processed = []
         
         for batch_name, batch_adata in batches.items():
@@ -220,7 +220,7 @@ def evaluate_per_sgRNA_knockdown(
                              cells_per_gRNA_threshold, label_interval)
 
     # Final filtering and visualization
-    adata_perturbed = qc._get_perturbed_view(adata)
+    adata_perturbed = utils.get_perturbed_view(adata)
     pl.plotting.plot_sorted_bars(
         adata_perturbed.obs.gRNA.value_counts(),
         ylabel="Number of Cells per gRNA",
@@ -317,7 +317,7 @@ def knockdown_qc(
 
     # Batch processing logic
     if batch_aware and 'batch' in adata.obs:
-        batches = utils.__split_by_batch(adata, copy=True)
+        batches = utils.split_by_batch(adata, copy=True)
         processed = []
         
         for batch_name, batch_adata in batches.items():

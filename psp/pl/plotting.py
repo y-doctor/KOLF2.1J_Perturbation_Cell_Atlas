@@ -275,3 +275,89 @@ def plot_sorted_bars(
     plt.tight_layout()
     return fig
 
+
+def plot_percentage_perturbations_by_repression(
+    adata: ad.AnnData,
+    perturbation_col: str = "gene_target",
+    knockdown_col: str = "total_knockdown",
+    knockdown_threshold: float = 0.3,
+    figsize: tuple[float, float] = (5, 5),
+    line_color: str = "#367CB7",
+    fill_color: str = "#EDF6FF",
+    threshold_color: str = "#5CB39D"
+) -> plt.Figure:
+    """
+    Visualize the cumulative percentage of perturbations achieving specific knockdown levels.
+    
+    Parameters:
+    - adata: AnnData object containing perturbation data
+    - perturbation_col: Column in adata.obs containing perturbation identifiers
+    - knockdown_col: Column in adata.obs containing knockdown efficiency values (0-1 scale)
+    - knockdown_threshold: Threshold for meaningful repression (default 0.3 = 30%)
+    - figsize: Dimensions of the output figure
+    - line_color: Color for the main trend line
+    - fill_color: Color for the area under the curve
+    - threshold_color: Color for the threshold reference line
+    
+    Returns:
+    - matplotlib Figure object containing the visualization
+    
+    Raises:
+    - ValueError: If required columns are missing from adata.obs
+    """
+    # Validate input columns
+    utils.validate_anndata(adata, required_obs=[perturbation_col, knockdown_col])
+    
+    # Calculate mean knockdown per perturbation
+    total_knockdown = adata.obs.groupby(perturbation_col)[knockdown_col].mean()
+    sorted_knockdown = np.sort(total_knockdown)[::-1]  # Descending sort
+    
+    # Create figure and axis
+    fig, ax = plt.subplots(figsize=figsize)
+    
+    # Plot main elements
+    ax.fill_between(
+        range(1, len(sorted_knockdown) + 1),
+        0,
+        sorted_knockdown * 100,
+        color=fill_color
+    )
+    ax.plot(
+        range(1, len(sorted_knockdown) + 1),
+        sorted_knockdown * 100,
+        color=line_color,
+        linewidth=2
+    )
+    
+    # Add threshold reference line
+    ax.axhline(
+        y=knockdown_threshold * 100,
+        color=threshold_color,
+        linestyle='--',
+        linewidth=1.5
+    )
+    
+    # Configure axis labels and ticks
+    ax.set_xlabel('Number of Perturbations', fontsize=12)
+    ax.set_ylabel('% Repression', fontsize=12)
+    ax.set_ylim(0, 100)
+    ax.set_xlim(0, len(sorted_knockdown) + 1)
+    ax.invert_yaxis()
+    
+    # Configure ticks and labels
+    y_ticks = np.arange(0, 101, 20)
+    ax.set_yticks(y_ticks)
+    ax.set_yticklabels([f"{y}%" for y in y_ticks])
+    ax.tick_params(axis='both', which='major', labelsize=10)
+    
+    # Style elements
+    ax.set_facecolor('white')
+    for spine in ax.spines.values():
+        spine.set_linewidth(1.5)
+    ax.spines[['top', 'right']].set_visible(False)
+    
+    # Add grid
+    ax.grid(axis='y', linestyle='--', alpha=0.7)
+
+    plt.tight_layout()
+    return fig

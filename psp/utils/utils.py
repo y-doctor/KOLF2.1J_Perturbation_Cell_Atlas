@@ -1,7 +1,8 @@
 import anndata as ad
 import os
+import pandas as pd
 
-def __split_by_batch(adata: ad.AnnData, copy: bool = True) -> dict[str, ad.AnnData]:
+def split_by_batch(adata: ad.AnnData, copy: bool = True) -> dict[str, ad.AnnData]:
     """
     Split the AnnData object by batch.
 
@@ -14,7 +15,7 @@ def __split_by_batch(adata: ad.AnnData, copy: bool = True) -> dict[str, ad.AnnDa
     """
     return {batch: adata[adata.obs.batch == batch].copy() if copy else adata[adata.obs.batch == batch] for batch in adata.obs.batch.unique()}
 
-def __split_by_channel(adata: ad.AnnData, copy: bool = True) -> dict[str, ad.AnnData]:
+def split_by_channel(adata: ad.AnnData, copy: bool = True) -> dict[str, ad.AnnData]:
     """
     Split the AnnData object by channel.
 
@@ -27,7 +28,7 @@ def __split_by_channel(adata: ad.AnnData, copy: bool = True) -> dict[str, ad.Ann
     """
     return {channel: adata[adata.obs.channel == channel].copy() if copy else adata[adata.obs.channel == channel] for channel in adata.obs.channel.unique()}
 
-def __split_by_treatment(adata: ad.AnnData, copy: bool = True) -> dict[str, ad.AnnData]:
+def split_by_treatment(adata: ad.AnnData, copy: bool = True) -> dict[str, ad.AnnData]:
     """
     Split the AnnData object by treatment.
 
@@ -40,7 +41,7 @@ def __split_by_treatment(adata: ad.AnnData, copy: bool = True) -> dict[str, ad.A
     """
     return {treatment: adata[adata.obs.treatment == treatment].copy() if copy else adata[adata.obs.treatment == treatment] for treatment in adata.obs.treatment.unique()}
 
-def __split_by_cell_type(adata: ad.AnnData, copy: bool = True) -> dict[str, ad.AnnData]:
+def split_by_cell_type(adata: ad.AnnData, copy: bool = True) -> dict[str, ad.AnnData]:
     """
     Split the AnnData object by cell type.
 
@@ -53,7 +54,7 @@ def __split_by_cell_type(adata: ad.AnnData, copy: bool = True) -> dict[str, ad.A
     """
     return {cell_type: adata[adata.obs.cell_type == cell_type].copy() if copy else adata[adata.obs.cell_type == cell_type] for cell_type in adata.obs.cell_type.unique()}
 
-def __split_by_metadata(adata: ad.AnnData, metadata_key: str, copy: bool = True) -> dict[str, ad.AnnData]:
+def split_by_metadata(adata: ad.AnnData, metadata_key: str, copy: bool = True) -> dict[str, ad.AnnData]:
     """
     Split the AnnData object by a metadata key.
 
@@ -95,4 +96,65 @@ def validate_anndata(adata: ad.AnnData, required_obs: list[str] = None, required
         missing_varm = [key for key in required_varm if key not in adata.varm]
         if missing_varm:
             raise ValueError(f"Missing required varm entries: {missing_varm}")
+
+def get_perturbed_view(adata: ad.AnnData) -> ad.AnnData:
+    """
+    Get a view of the AnnData object containing only perturbed cells.
+    
+    Parameters:
+    - adata: Input AnnData object
+    - copy: Whether to return a copy (default) or view
+    
+    Returns:
+    - Subset AnnData containing only perturbed cells
+    """
+    if 'perturbed' not in adata.obs:
+        raise ValueError("Missing required 'perturbed' column in obs")
+    return adata[adata.obs.perturbed == "True"]
+
+def get_ntc_view(adata: ad.AnnData) -> ad.AnnData:
+    """
+    Get a view of the AnnData object containing only non-targeting control (NTC) cells.
+    
+    Parameters:
+    - adata: Input AnnData object
+    - copy: Whether to return a copy (default) or view
+    
+    Returns:
+    - Subset AnnData containing only NTC cells
+    """
+    if 'perturbed' not in adata.obs:
+        raise ValueError("Missing required 'perturbed' column in obs")
+    return adata[adata.obs.perturbed == "False"]
+
+def read_gtf(gtf_path: str) -> pd.DataFrame:
+    """
+    Read and parse GTF file into gene information DataFrame.
+    
+    Parameters:
+    - gtf_path: Path to GTF file
+    - gene_type: Type of genes to filter (e.g. 'protein_coding')
+    
+    Returns:
+    - DataFrame with columns: ['seqname', 'gene_name', 'gene_type', 'gene_id']
+    """
+    # ... existing _read_gtf implementation from lines 450-483 ...
+    
+def identify_coding_genes(
+    adata: ad.AnnData, 
+    gtf_path: str,
+    subset: bool = False
+) -> ad.AnnData:
+    """
+    Annotate and optionally subset to protein-coding genes.
+    
+    Parameters:
+    - adata: AnnData object with gene_ids in var
+    - gtf_path: Path to GTF file with gene annotations
+    - subset: Whether to subset to protein-coding genes
+    
+    Returns:
+    - AnnData with gene_type annotation and optionally subset
+    """
+    # ... existing identify_coding_genes implementation from lines 430-441 ...
 
