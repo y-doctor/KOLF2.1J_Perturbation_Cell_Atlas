@@ -7,10 +7,8 @@ import numpy as np
 import requests
 import psp.utils as utils
 import psp.pl as pl
-from joblib import Parallel, delayed
 from tqdm.contrib.concurrent import process_map
 import dcor
-from sklearn.utils import gen_even_slices
 from typing import Tuple, Dict, List
 
 
@@ -178,7 +176,7 @@ def clean_ntc_cells(adata: ad.AnnData, contamination_threshold: float = 0.3, NTC
     return adata
 
 ######################################
-# sgRNA Evaluation & Filtering
+# Isolating sgRNA that cause sufficient target gene knockdown
 ######################################
 
 def evaluate_per_sgRNA_knockdown(
