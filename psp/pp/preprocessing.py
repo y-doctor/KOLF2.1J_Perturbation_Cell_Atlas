@@ -7,11 +7,20 @@ import numpy as np
 import requests
 import psp.utils as utils
 import psp.pl as pl
+from joblib import Parallel, delayed
+from tqdm import tqdm, tqdm_joblib
+import dcor
+from sklearn.utils import gen_even_slices
+from typing import Tuple, Dict, List
 
+
+######################################
+# NTC Processing Utilities
+######################################
 
 def get_NTCs_from_whitelist(adata: ad.AnnData, whitelist_path: str) -> ad.AnnData:
     """
-    Isolate data to the 
+    Isolate data to contain only the NTCs from the whitelist.
 
     Parameters:
     adata (AnnData): The AnnData object to be modified.
@@ -168,6 +177,9 @@ def clean_ntc_cells(adata: ad.AnnData, contamination_threshold: float = 0.3, NTC
     print(f"Total number of cells after NTC cleaning: {len(adata.obs)}")
     return adata
 
+######################################
+# sgRNA Evaluation & Filtering
+######################################
 
 def evaluate_per_sgRNA_knockdown(
     adata: ad.AnnData,
@@ -413,3 +425,393 @@ def _process_batch_knockdown(
     batch_adata.obs[zscore_col] = zscores
     
     return batch_adata
+
+######################################
+# Assesing sgRNA which induce a Transcriptional Phenotype via Energy Distance
+######################################
+
+def normalize_log_scale(adata: ad.AnnData, batch_sensitive: bool = True) -> ad.AnnData:
+    """
+    Normalize and log-scale the expression data for each batch in the AnnData object.
+
+    Parameters:
+    - adata (anndata.AnnData): The AnnData object containing the data to normalize.
+    - batch_sensitive (bool): If True, process batches separately; otherwise, normalize across all data. Default is True.
+
+    Returns:
+    - adata (anndata.AnnData): The AnnData object with normalized and log-scaled data.
+    """
+    if batch_sensitive:
+        # Validate input structure
+        utils.validate_anndata(adata, required_obs=["perturbed", "batch"])
+
+        # Split the AnnData object by batch
+        batches = utils.split_by_batch(adata, copy=True)
+        processed_batches = []
+
+        for batch_name, batch_adata in batches.items():
+            # Calculate median NTC counts for the current batch
+            median_NTC = np.median(list(utils.get_ntc_view(batch_adata).obs.n_UMI_counts))
+            
+            # Normalize total counts
+            sc.pp.normalize_total(batch_adata, target_sum=median_NTC)
+            
+            # Log transform and scale the data
+            sc.pp.log1p(batch_adata)
+            sc.pp.scale(batch_adata)
+
+            processed_batches.append(batch_adata)
+        
+        # Merge processed batches back into a single AnnData object
+        adata = ad.concat(processed_batches, merge='same', join='inner')
+    else:
+        # Validate input structure
+        utils.validate_anndata(adata, required_obs=["perturbed"])
+
+        # Calculate median NTC counts for the entire dataset
+        median_NTC = np.median(list(utils.get_ntc_view(adata).obs.n_UMI_counts))
+        
+        # Normalize total counts
+        sc.pp.normalize_total(adata, target_sum=median_NTC)
+        
+        # Log transform and scale the data
+        sc.pp.log1p(adata)
+        sc.pp.scale(adata)
+
+    return adata
+
+
+def __subsample_anndata_for_energy_distance(
+    adata: ad.AnnData,
+    category: str,
+    n_min: int,
+    ref_size: int = 3000,
+    control_string: str = "NTC",
+    seed: int = 42
+) -> ad.AnnData:
+    """Subsample cells while maintaining biological diversity through stratified sampling.
+    
+    Performs stratified subsampling of cells with special handling for control groups:
+    1. For control groups (containing control_string), deisgnates as set of these as reference cells of size ref_size and labels remaining as NTC.
+    2. For non-control groups, subsamples to ensure minimum representation per category
+    3. Adds metadata tracking sample origins in 'ed_category' observation field
+
+    Parameters:
+        adata: Input AnnData object containing single-cell data
+        category: Observation column name used for stratification
+        n_min: Minimum number of cells to retain per non-control category
+        ref_size: Number of control cells to designate as reference population
+        control_string: Substring identifying control groups in category column
+        seed: Random seed for reproducible sampling (default: None)
+
+    Returns:
+        Subsampled AnnData copy containing:
+        - ref_size control cells labeled 'reference'
+        - Remaining control cells labeled 'NTC'
+        - min(n_min, group_size) cells per non-control category
+
+    Raises:
+        ValueError: If input validation fails or insufficient control cells
+    """
+    # Validate input structure
+    if category not in adata.obs:
+        raise ValueError(f"Stratification category '{category}' not found in adata.obs")
+    
+    # Set random seed if provided
+    if seed is not None:
+        np.random.seed(seed)
+
+    # Initialize tracking metadata and storage
+    adata.obs["ed_category"] = "None"
+    keep_indices = []
+
+    # Process control groups
+    control_mask = adata.obs[category].str.contains(control_string)
+    control_indices = adata.obs.index[control_mask].tolist()
+    
+    if len(control_indices) < ref_size:
+        raise ValueError(f"Control group(s) contain {len(control_indices)} cells, below ref_size ({ref_size})")
+    
+    # Sample reference population from controls
+    reference_samples = np.random.choice(control_indices, ref_size, replace=False)
+    adata.obs.loc[reference_samples, "ed_category"] = "reference"
+    keep_indices.extend(reference_samples.tolist())
+    
+    # Label remaining controls as NTC
+    ntc_samples = np.setdiff1d(control_indices, reference_samples)
+    adata.obs.loc[ntc_samples, "ed_category"] = "NTC"
+    keep_indices.extend(ntc_samples.tolist())
+
+    # Process experimental groups
+    for group_name, group_indices in adata.obs.groupby(category).groups.items():
+        if control_string not in group_name:
+            # Subsample if group exceeds minimum size
+            if len(group_indices) >= n_min:
+                sampled = np.random.choice(group_indices, n_min, replace=False)
+                adata.obs.loc[sampled, "ed_category"] = group_name
+                keep_indices.extend(sampled.tolist())
+
+    return adata[keep_indices].copy()
+
+
+def __preprocess_for_ed(adata_subsampled: ad.AnnData) -> ad.AnnData:
+    """Preprocess subsampled data for energy distance analysis as per scPerturb (Peidli et al. 2024).
+    
+    Performs key preprocessing steps:
+    1. Selects highly variable genes using a class-balanced subset (excluding NTC cells)
+    2. Copies gene selection to full subsampled data
+    3. Computes PCA and nearest neighbor graph
+    
+    Parameters:
+        adata_subsampled: Subsampled AnnData object containing reference, 
+            NTC, and experimental cells from `subsample_for_ed`
+
+    Returns:
+        Processed AnnData object with PCA and neighbor graph calculated.
+        Adds/modifies:
+        - `.var['highly_variable']`: Boolean mask of selected genes
+        - `.obsm['X_pca']`: PCA coordinates
+        - `.uns['neighbors']`: Nearest neighbor graph
+        - `.obsp['distances']`, `.obsp['connectivities']`: NN matrices
+    """
+    n_var_max = 2000  # Maximum number of features to select
+    
+    # Calculate HVGs using class-balanced subset (exclude NTC cells)
+    adata_class_balance: ad.AnnData = adata_subsampled[
+        adata_subsampled.obs.ed_category != "NTC"
+    ].copy()
+    
+    sc.pp.highly_variable_genes(
+        adata_class_balance,
+        n_top_genes=n_var_max,
+        subset=False,
+        flavor='seurat_v3',
+        layer='counts'
+    )
+    
+    # Apply HVG selection to full dataset
+    adata_subsampled.var["highly_variable"] = adata_class_balance.var["highly_variable"].copy()
+    
+    # Dimensionality reduction and neighborhood graph
+    sc.pp.pca(adata_subsampled, use_highly_variable=True)
+    sc.pp.neighbors(adata_subsampled)
+
+    return adata_subsampled
+
+
+def compute_energy_distance(
+    adata: ad.AnnData,
+    category: str = "ed_category",
+    reference_name: str = "reference",
+    control_name: str = "NTC",
+    n_replicates: int = 10000,
+    ref_sample_size: int = 20,
+    use_rep: str = "X_pca",
+    n_jobs: int = -1,
+    threshold: float = 0.75
+) -> Tuple[np.ndarray, List[float], Dict[str, float]]:
+    """
+    Compute energy distances between experimental groups and reference population.
+    
+    Parameters:
+        adata: AnnData object containing single-cell data
+        category: Observation column for group stratification
+        reference_name: Name of reference population in category column
+        control_name: Name of control population in category column
+        n_replicates: Number of null distribution samples
+        ref_sample_size: Number of cells to sample from control population
+        use_rep: Data representation to use (X_pca, X, etc.)
+        n_jobs: Number of parallel jobs (-1 for all cores)
+        threshold: Probability threshold for perturbation detection
+    
+    Returns:
+        Tuple containing:
+        - Valid sgRNA names that pass threshold
+        - Null distribution energy distances
+        - Experimental group energy distances
+    """
+    # Data preparation
+    data = _get_energy_distance_data(adata, use_rep)
+    reference_data, control_data = _extract_reference_control_data(adata, data, category, reference_name, control_name)
+
+    # Null distribution computation
+    null_distances = _compute_null_distribution(
+        control_data, 
+        reference_data,
+        ref_sample_size,
+        n_replicates,
+        n_jobs
+    )
+
+    # Experimental group computation
+    results = _compute_group_distances(
+        adata,
+        data,
+        category,
+        reference_name,
+        n_jobs
+    )
+
+    # Visualization and thresholding
+    valid_gRNA = pl.plot_energy_distance_threshold(
+        null_distances,
+        results,
+        threshold=threshold
+    )
+
+    return valid_gRNA, null_distances, results
+
+def _get_energy_distance_data(adata: ad.AnnData, use_rep: str) -> np.ndarray:
+    """Helper to get and validate energy distance input data"""
+    if use_rep is None:
+        data = adata.X
+    else:
+        if use_rep not in adata.obsm:
+            raise ValueError(f"Representation '{use_rep}' not found in adata.obsm")
+        data = adata.obsm[use_rep]
+    
+    return data.toarray() if hasattr(data, "toarray") else data
+
+def _extract_reference_control_data(
+    adata: ad.AnnData,
+    data: np.ndarray,
+    category: str,
+    reference_name: str,
+    control_name: str
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Extract reference and control population data"""
+    reference_mask = adata.obs[category] == reference_name
+    control_mask = adata.obs[category] == control_name
+    return data[reference_mask], data[control_mask]
+
+def _compute_null_distribution(
+    control_data: np.ndarray,
+    reference_data: np.ndarray,
+    sample_size: int,
+    n_replicates: int,
+    n_jobs: int
+) -> List[float]:
+    """Compute null distribution through parallel sampling"""
+    def _single_null_computation():
+        sample = control_data[np.random.choice(control_data.shape[0], sample_size, False)]
+        return dcor.energy_distance(sample, reference_data)
+    
+    with tqdm_joblib(desc="Null distribution", total=n_replicates):
+        return Parallel(n_jobs=n_jobs)(
+            delayed(_single_null_computation)() 
+            for _ in range(n_replicates)
+        )
+
+def _compute_group_distances(
+    adata: ad.AnnData,
+    data: np.ndarray,
+    category: str,
+    reference_name: str,
+    n_jobs: int
+) -> Dict[str, float]:
+    """Calculate energy distances for all experimental groups"""
+    groups = {
+        g: idx 
+        for g, idx in adata.obs.groupby(category).groups.items()
+        if g != reference_name
+    }
+    
+    def _group_distance(indices):
+        return dcor.energy_distance(data[indices], data[adata.obs[category] == reference_name])
+    
+    with tqdm_joblib(desc="Experimental groups", total=len(groups)):
+        distances = Parallel(n_jobs=n_jobs)(
+            delayed(_group_distance)(indices)
+            for indices in groups.values()
+        )
+    
+    return dict(zip(groups.keys(), distances))
+
+
+def _process_single_batch_energy_distance(
+    adata: ad.AnnData,
+    sgRNA_column: str,
+    n_min: int,
+    control_string: str,
+    **kwargs
+) -> Tuple[ad.AnnData, List[float], Dict[str, float]]:
+    """Process individual batch with energy distance filtering"""
+    try:
+        subsampled = __subsample_anndata_for_energy_distance(
+            adata,
+            category=sgRNA_column,
+            n_min=n_min,
+            control_string=control_string
+        )
+        preprocessed = __preprocess_for_ed(subsampled)
+        valid_sgRNA, null_dist, results = compute_energy_distance(subsampled, **kwargs)
+        
+        valid_mask = adata.obs[sgRNA_column].isin(valid_sgRNA) | (adata.obs.perturbed == "False")
+        return adata[valid_mask].copy(), null_dist, results
+        
+    except ValueError as e:
+        print(f"Skipping batch due to error: {str(e)}")
+        return adata, [], {}
+
+
+
+def filter_sgRNA_energy_distance(
+    adata: ad.AnnData,
+    sgRNA_column: str = "gRNA",
+    batch_key: str = "batch",
+    n_min: int = 20,
+    control_string: str = "Non-Targeting",
+    verbose: bool = True,
+    **kwargs
+) -> Tuple[ad.AnnData, List[float], Dict[str, float]]:
+    """
+    Batch-aware sgRNA filtering using energy distance analysis.
+    
+    Parameters:
+        adata: Input AnnData object
+        sgRNA_column: Observation column containing sgRNA information
+        batch_key: Column name for batch information (if processing multiple batches)
+        n_min: Minimum cells per sgRNA for inclusion
+        control_string: Identifier for control sgRNAs
+        verbose: Whether to print progress updates
+        **kwargs: Additional arguments for compute_energy_distance
+    
+    Returns:
+        Tuple containing:
+        - Filtered AnnData object
+        - Aggregated null distribution distances
+        - Combined experimental group results
+    """
+    if batch_key is None:
+        return _process_single_batch_energy_distance(adata, sgRNA_column, n_min, control_string, **kwargs)
+    else:
+        utils.validate_anndata(adata, obs_keys=[batch_key])
+
+    # Split by batches and process individually
+    batches = adata.obs[batch_key].unique()
+    all_valid = set() # set of valid sgRNAs 
+    combined_null = [] # list of null distribution distances
+    combined_results = {} # dictionary of experimental group results
+
+    for batch in batches:
+        if verbose:
+            print(f"Processing batch: {batch}")
+            
+        batch_adata = adata[adata.obs[batch_key] == batch].copy()
+        batch_filtered, null_dist, results = _process_single_batch_energy_distance(
+            batch_adata, sgRNA_column, n_min, control_string, **kwargs
+        )
+        
+        # Aggregate results
+        all_valid.update(results.keys())
+        combined_null.extend(null_dist)
+        combined_results.update(results)
+
+    # Apply combined filtering to original data
+    valid_mask = adata.obs[sgRNA_column].isin(all_valid) | (adata.obs.perturbed == "False")
+    
+    if verbose:
+        print(f"Retained {valid_mask.sum()} cells after batch-aware filtering")
+        
+    return adata[valid_mask].copy(), combined_null, combined_results
+

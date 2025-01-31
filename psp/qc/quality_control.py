@@ -456,7 +456,6 @@ def dead_cell_qc(adata: ad.AnnData, count_MADs: int = 5, mt_MADs: int = 3, ribo_
     return adata
 
 
-
 def default_qc(input_dict: dict) -> ad.AnnData:
     """
     Performs the default quality control pipeline.

@@ -16,6 +16,7 @@ dependencies:
   - joblib
   - tqdm
   - ipython
+  - dcor
   - sphinx
   - sphinx_rtd_theme  # Optional: A popular theme for Sphinx documentation
   - myst-parser       # Optional: If you want to include Markdown files

@@ -9,6 +9,7 @@ from plotnine import (
     element_text, scale_y_continuous
 )
 import psp.utils as utils
+from scipy.stats import gamma
 
 def plot_cells_per_perturbation(adata: ad.AnnData, perturbation_key: str = 'gene_target', perturbed_key: str = 'perturbed', highlight_threshold: int = 100, y_max: int = 600) -> plt.Figure:
     """
@@ -361,3 +362,38 @@ def plot_percentage_perturbations_by_repression(
 
     plt.tight_layout()
     return fig
+
+def plot_energy_distance_threshold(null_distances, results, threshold=0.75):    
+    """
+    Plot energy distance distribution with gamma fit and threshold line.
+    
+    Parameters:
+        null_distances: Array of null distribution energy distances
+        results: Dictionary of {sgRNA: energy_distance} for perturbing guides
+        threshold: Probability threshold for gamma distribution cutoff
+    """
+    # Fit gamma distribution
+    alpha_mle, loc_mle, beta_mle = gamma.fit(null_distances, loc=0.3)
+    
+    # Prepare data
+    perturbed_edist = np.array(list(results.values()))
+    x = np.linspace(np.min(null_distances), np.max(null_distances), 1000)
+    pdf_fitted = gamma.pdf(x, alpha_mle, loc=loc_mle, scale=beta_mle)
+    thresh_val = gamma.ppf(threshold, alpha_mle, loc=loc_mle, scale=beta_mle)
+
+    # Create plot
+    plt.figure(figsize=(10, 6))
+    plt.hist(null_distances, bins=300, density=True, alpha=0.6, 
+             color='b', label="Control sgRNA")
+    plt.hist(np.clip(perturbed_edist, 0, np.max(null_distances)*3), bins=300,
+             density=True, alpha=0.6, color='g', label="Perturbing sgRNA")
+    plt.plot(x, pdf_fitted, 'r-', lw=2, label="Fitted Gamma Distribution")
+    plt.axvline(x=thresh_val, color='r', linestyle='--', 
+                label=f"{threshold*100}% Probability Threshold")
+    
+    plt.xlabel("Energy Distance")
+    plt.ylabel("Density")
+    plt.legend()
+    plt.show()
+    
+    return thresh_val
