@@ -10,6 +10,7 @@ import psp.pl as pl
 from tqdm.contrib.concurrent import process_map
 import dcor
 from typing import Tuple, Dict, List
+from sklearn.svm import OneClassSVM
 
 
 ######################################
@@ -518,7 +519,9 @@ def __subsample_anndata_for_energy_distance(
     
     # Set random seed if provided
     if seed is not None:
-        np.random.seed(seed)
+        rng = np.random.default_rng(seed)
+    else:
+        rng = np.random.default_rng()
 
     # Initialize tracking metadata and storage
     adata.obs["ed_category"] = "None"
@@ -532,7 +535,7 @@ def __subsample_anndata_for_energy_distance(
         raise ValueError(f"Control group(s) contain {len(control_indices)} cells, below ref_size ({ref_size})")
     
     # Sample reference population from controls
-    reference_samples = np.random.choice(control_indices, ref_size, replace=False)
+    reference_samples = rng.choice(control_indices, ref_size, replace=False)
     adata.obs.loc[reference_samples, "ed_category"] = "reference"
     keep_indices.extend(reference_samples.tolist())
     
@@ -546,7 +549,7 @@ def __subsample_anndata_for_energy_distance(
         if control_string not in group_name:
             # Subsample if group exceeds minimum size
             if len(group_indices) >= n_min:
-                sampled = np.random.choice(group_indices, n_min, replace=False)
+                sampled = rng.choice(group_indices, n_min, replace=False)  # Use the RNG to sample
                 adata.obs.loc[sampled, "ed_category"] = group_name
                 keep_indices.extend(sampled.tolist())
 
@@ -737,7 +740,7 @@ def _compute_group_distances(
         # Add any stochastic operations here using local_rng
         return dcor.energy_distance(data[indices], data[adata.obs[category] == reference_name]) # compute the energy distance
     
-    # Use process_map instead of tqdm_joblib for parallel processing with progress bar
+    #Compute the energy distance for each experimental group in parallel
     distances = process_map(_group_distance, group_indices, seeds, max_workers=n_jobs, desc="Experimental groups")
     
     return dict(zip(group_names, distances))
@@ -820,11 +823,228 @@ def filter_sgRNA_energy_distance(
         combined_null.extend(null_distances)
         combined_results.update(experimental_group_distances)
 
+        if verbose:
+            print(f"Retained {len(valid_sgRNA)} sgRNAs from batch {batch}") 
+
     # Apply combined filtering to original data
     valid_mask = adata.obs[sgRNA_column].isin(all_valid) | (adata.obs.perturbed == "False")
-    
+    adata_filtered = adata[valid_mask].copy()
+    del adata
+
     if verbose:
         print(f"Retained {valid_mask.sum()} cells after batch-aware filtering")
-        
-    return adata[valid_mask].copy(), combined_null, combined_results
+    
+    return adata_filtered, combined_null, combined_results
 
+######################################
+# Removing cells that do not have an altered transcriptional phenotype
+######################################
+
+def _plot_anomaly_scores(control_scores, perturbed_scores, threshold, batch_name=None):
+    """
+    Helper function to plot the distribution of anomaly scores for control and perturbed cells.
+
+    Parameters:
+    - control_scores (list): Anomaly scores for control cells.
+    - perturbed_scores (list): Anomaly scores for perturbed cells.
+    - threshold (float): Decision threshold for classifying cells as perturbed.
+    - batch_name (str, optional): Name of the batch being processed (for title clarity).
+
+    Returns:
+    - None: Displays a histogram plot of the anomaly scores.
+    """
+    plt.figure(figsize=(10, 6))
+    
+    # Plot histogram for control cells
+    plt.hist(control_scores, bins=100, density=True, alpha=0.4, color='blue', label="Control Cells")
+    
+    # Plot histogram for perturbed cells
+    plt.hist(perturbed_scores, bins=100, density=True, alpha=0.4, color='green', label="Perturbed Cells")
+    
+    # Add decision threshold line
+    plt.axvline(x=0, color='red', linestyle='--', label=f"{threshold * 100:.1f}% Decision Threshold")
+    
+    # Set plot title
+    title = "Anomaly Score Distribution"
+    if batch_name:
+        title += f" - Batch: {batch_name}"
+    plt.title(title, fontsize=14)
+    
+    # Set axis labels
+    plt.xlabel("Anomaly Score (-decision_function)", fontsize=12)
+    plt.ylabel("Density", fontsize=12)
+    
+    # Add legend and grid
+    plt.legend(fontsize=10)
+    plt.grid(False)
+    
+    # Show the plot
+    plt.tight_layout()
+    plt.show()
+
+
+
+def remove_unperturbed_cells_SVM(
+    adata: ad.AnnData,
+    threshold: float = 0.75,
+    batch_key: str = None,
+    ntc_identifier: str = "NTC",
+    verbose: bool = True
+) -> Tuple[ad.AnnData, np.ndarray, np.ndarray]:
+    """
+    Identify and remove cells without transcriptional perturbation using One-Class SVM.
+
+    Processes data in batches if batch information is provided. For each batch:
+    1. Recomputes PCA representation
+    2. Trains One-Class SVM on NTC cells
+    3. Identifies perturbed cells with anomaly scores above threshold
+
+    Parameters:
+        adata: AnnData object containing:
+            - layers['counts']: Raw count data
+            - obs['gene_target']: Column containing NTC identifiers
+            - obs['perturbed']: Boolean-like column indicating perturbation status
+        threshold: Probability threshold for considering cells perturbed (0-1)
+        batch_key: Column name for batch information (None for single batch)
+        ntc_identifier: String identifying NTC cells in gene_target column
+        verbose: Whether to print progress information
+
+    Returns:
+        Tuple containing:
+        - Filtered AnnData object
+        - Array of control cell anomaly scores
+        - Array of perturbed cell anomaly scores
+
+    Raises:
+        ValueError: If required columns/layers are missing or no NTC cells found
+    """
+    # Validate input structure
+    utils.validate_anndata(adata, required_obs=['gene_target', 'perturbed'], required_layers=['counts'])
+    
+    # Prepare storage for results
+    all_control_scores = []
+    all_perturbed_scores = []
+    valid_cells = []
+
+    def _process_batch(batch_name: str, batch_adata: ad.AnnData) -> Tuple[list, list, list]:
+        """Process a single batch of data"""
+        # Recompute PCA for current batch
+        batch_adata.X = batch_adata.layers["counts"].copy()
+        sc.pp.highly_variable_genes(batch_adata, flavor='seurat_v3', n_top_genes=2000, layer='counts') #TODO: Does this need to be class balanced like in the energy distance filtering? Interesting debate to have.
+        sc.pp.normalize_total(batch_adata)
+        sc.pp.log1p(batch_adata)
+        sc.pp.scale(batch_adata)
+        sc.pp.pca(batch_adata)
+
+        # Split cells into NTC and perturbed views
+        adata_ntc = utils.get_ntc_view(batch_adata)
+        adata_perturbed = utils.get_perturbed_view(batch_adata)
+
+        # Train One-Class SVM on NTC cells
+        clf = OneClassSVM(kernel='rbf', nu=1-threshold).fit(adata_ntc.obsm["X_pca"])
+
+        # Calculate anomaly scores
+        control_scores = -clf.decision_function(adata_ntc.obsm["X_pca"])
+        perturbed_scores = -clf.decision_function(adata_perturbed.obsm["X_pca"])
+        
+        # Store results
+        batch_valid = [
+            *adata_ntc.obs.index.tolist(),
+            *adata_perturbed.obs.index[perturbed_scores > 0].tolist()
+        ]
+
+        _plot_anomaly_scores(control_scores, perturbed_scores, threshold, batch_name=batch_name)
+        
+        return batch_valid, control_scores, perturbed_scores
+
+    # Batch processing logic
+    if batch_key:
+        batches = utils.split_by_batch(adata, batch_key=batch_key, copy=True)
+        for batch_name, batch_data in batches.items():
+            if verbose:
+                print(f"Processing batch: {batch_name}")
+            try:
+                batch_valid, control, perturbed = _process_batch(batch_name, batch_data)
+                valid_cells.extend(batch_valid)
+                all_control_scores.extend(control)
+                all_perturbed_scores.extend(perturbed)
+                if verbose:
+                    n_perturbed = len(perturbed)
+                    n_valid = sum(np.array(batch_valid > 0))
+                    print(f"Retained {n_valid}/{n_perturbed} perturbed cells ({n_valid/n_perturbed:.1%}) above threshold {threshold} in batch {batch_name}")
+            except ValueError as e:
+                print(f"Skipping batch {batch_name}: {str(e)}")
+    else:
+        valid_cells, all_control_scores, all_perturbed_scores = _process_batch(adata)
+
+    # Filter and create final dataset
+    adata_filtered = adata[adata.obs.index.isin(valid_cells)].copy()
+    del adata
+
+    if verbose:
+        n_perturbed = len(all_perturbed_scores)
+        n_valid = sum(np.array(all_perturbed_scores) > 0)
+        print(f"Retained {n_valid}/{n_perturbed} total perturbed cells ({n_valid/n_perturbed:.1%}) above threshold {threshold}")
+
+    return adata_filtered
+
+def remove_perturbations_by_cell_threshold(
+    adata: ad.AnnData,
+    cell_threshold: int = 25,
+    batch_key: str = None,
+    perturbation_key: str = "gene_target",
+    verbose: bool = True
+) -> ad.AnnData:
+    """
+    Filter perturbations based on minimum cell count requirements, with batch-aware processing.
+
+    Parameters:
+        adata: AnnData object containing single-cell data
+        cell_threshold: Minimum number of cells required per perturbation (per batch if batch_key provided)
+        batch_key: Optional column name in obs for batch information. If provided, 
+                   requires threshold to be met in ALL batches where the perturbation exists
+        perturbation_key: Observation column containing perturbation identifiers
+        verbose: Whether to print filtering statistics
+
+    Returns:
+        Filtered AnnData object containing only perturbations that meet cell count requirements
+
+    Example:
+        # Keep only perturbations with ≥50 cells in any batch they appear
+        adata_filtered = remove_perturbations_by_cell_threshold(adata, cell_threshold=50, batch_key="batch")
+    """
+    utils.validate_anndata(adata, obs_keys=[perturbation_key])
+    initial_cells = adata.n_obs
+    initial_perturbations = adata.obs[perturbation_key].nunique()
+
+    if batch_key:
+        # Batch-aware filtering: perturbation must meet threshold in ALL batches where it exists
+        batches = utils.split_by_batch(adata, batch_key=batch_key, copy=False)
+        
+        # Get valid perturbations that meet threshold in any batches they appear
+        valid_perturbations = set()
+        for batch_name, batch_data in batches.items():
+            batch_counts = batch_data.obs[perturbation_key].value_counts()
+            batch_valid = batch_counts[batch_counts >= cell_threshold].index.tolist()
+            valid_perturbations.update(batch_valid)
+            if verbose:
+                print(f"Batch '{batch_name}': {len(batch_valid)} perturbations meet threshold")
+    else:
+        # Global filtering
+        perturbation_counts = adata.obs[perturbation_key].value_counts()
+        valid_perturbations = perturbation_counts[perturbation_counts >= cell_threshold].index.tolist()
+
+    # Apply filtering
+    adata_filtered = adata[adata.obs[perturbation_key].isin(valid_perturbations)].copy()
+    
+    if verbose:
+        final_cells = adata_filtered.n_obs
+        final_perturbations = len(valid_perturbations)
+        removed = initial_perturbations - final_perturbations
+        
+        print(f"Initial perturbations: {initial_perturbations}")
+        print(f"Removed {removed} perturbations below {cell_threshold} cells")
+        print(f"Remaining perturbations: {final_perturbations}")
+        print(f"Cells kept: {final_cells}/{initial_cells} ({final_cells/initial_cells:.1%})")
+
+    return adata_filtered

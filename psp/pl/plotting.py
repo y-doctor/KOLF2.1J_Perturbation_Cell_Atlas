@@ -129,7 +129,7 @@ def plot_scatter(x: np.ndarray, y: np.ndarray, title: str = "Scatter Plot", xlab
     plt.title(title)
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
-    plt.grid(True)
+    plt.grid(False)
     plt.show()
 
 
@@ -142,7 +142,7 @@ def plot_histogram(data: np.ndarray, bins: int = 10, title: str = "Histogram", x
     plt.title(title)
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
-    plt.grid(True)
+    plt.grid(False)
     plt.show()
 
 
