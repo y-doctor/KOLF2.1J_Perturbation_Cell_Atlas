@@ -587,8 +587,8 @@ def default_qc(input_dict: dict) -> ad.AnnData:
     ]
     
     for key in required_keys:
-        if key not in input_dict:
-            raise ValueError(f"Missing required key in input_dict: {key}")
+            assert key in input_dict, f"Missing required key in input_dict: {key}"
+            assert isinstance(input_dict[key], str) and input_dict[key], f"{key} must be a non-empty string."
     
     # Read in the 10x matrix data
     print("Reading 10x matrix data...")
