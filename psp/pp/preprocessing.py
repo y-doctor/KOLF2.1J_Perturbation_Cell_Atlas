@@ -8,7 +8,7 @@ import requests
 import psp.utils as utils
 import psp.pl as pl
 from joblib import Parallel, delayed
-from tqdm import tqdm, tqdm_joblib
+from tqdm.contrib.concurrent import process_map
 import dcor
 from sklearn.utils import gen_even_slices
 from typing import Tuple, Dict, List
@@ -509,7 +509,8 @@ def __subsample_anndata_for_energy_distance(
         - ref_size control cells labeled 'reference'
         - Remaining control cells labeled 'NTC'
         - min(n_min, group_size) cells per non-control category
-
+        - 'ed_category' observation field tracking sample stratification
+        
     Raises:
         ValueError: If input validation fails or insufficient control cells
     """
@@ -591,6 +592,7 @@ def __preprocess_for_ed(adata_subsampled: ad.AnnData) -> ad.AnnData:
     
     # Apply HVG selection to full dataset
     adata_subsampled.var["highly_variable"] = adata_class_balance.var["highly_variable"].copy()
+    del adata_class_balance
     
     # Dimensionality reduction and neighborhood graph
     sc.pp.pca(adata_subsampled, use_highly_variable=True)
@@ -644,7 +646,7 @@ def compute_energy_distance(
     )
 
     # Experimental group computation
-    results = _compute_group_distances(
+    experimental_group_distances = _compute_group_distances(
         adata,
         data,
         category,
@@ -653,13 +655,14 @@ def compute_energy_distance(
     )
 
     # Visualization and thresholding
-    valid_gRNA = pl.plot_energy_distance_threshold(
+    threshold = pl.plot_energy_distance_threshold(
         null_distances,
-        results,
+        experimental_group_distances,
         threshold=threshold
     )
+    valid_gRNA = [gRNA for gRNA in experimental_group_distances.keys() if experimental_group_distances[gRNA] > threshold]
 
-    return valid_gRNA, null_distances, results
+    return valid_gRNA, null_distances, experimental_group_distances
 
 def _get_energy_distance_data(adata: ad.AnnData, use_rep: str) -> np.ndarray:
     """Helper to get and validate energy distance input data"""
@@ -689,43 +692,57 @@ def _compute_null_distribution(
     reference_data: np.ndarray,
     sample_size: int,
     n_replicates: int,
-    n_jobs: int
+    n_jobs: int,
+    seed: int = None
 ) -> List[float]:
     """Compute null distribution through parallel sampling"""
-    def _single_null_computation():
-        sample = control_data[np.random.choice(control_data.shape[0], sample_size, False)]
-        return dcor.energy_distance(sample, reference_data)
+    def _single_null_computation(rng):
+        indices = rng.choice(control_data.shape[0], sample_size, replace=False)
+        return dcor.energy_distance(control_data[indices], reference_data)
     
-    with tqdm_joblib(desc="Null distribution", total=n_replicates):
-        return Parallel(n_jobs=n_jobs)(
-            delayed(_single_null_computation)() 
-            for _ in range(n_replicates)
-        )
+    # Create independent RNG states for each replicate to ensure reproducibility
+    if seed is not None:
+        rng = np.random.default_rng(seed) # create a single master RNG state
+        seeds = rng.integers(0, 2**32-1, size=n_replicates) # generate seeds for each replicate
+        rngs = [np.random.default_rng(s) for s in seeds] # create independent RNG states for each replicate
+    else:
+        rngs = [np.random.default_rng() for _ in range(n_replicates)] # create a single master RNG state
+
+    # Use process_map instead of tqdm_joblib for parallel processing with progress bar
+    return process_map(_single_null_computation, rngs, max_workers=n_jobs, desc="Null distribution")
 
 def _compute_group_distances(
     adata: ad.AnnData,
     data: np.ndarray,
     category: str,
     reference_name: str,
-    n_jobs: int
+    n_jobs: int,
+    seed: int = None
 ) -> Dict[str, float]:
-    """Calculate energy distances for all experimental groups"""
+    """Calculate energy distances for all experimental groups with reproducibility"""
     groups = {
         g: idx 
         for g, idx in adata.obs.groupby(category).groups.items()
         if g != reference_name
     }
     
-    def _group_distance(indices):
-        return dcor.energy_distance(data[indices], data[adata.obs[category] == reference_name])
+    # Create deterministic order for groups
+    sorted_groups = sorted(groups.items(), key=lambda x: x[0]) # sort groups by name
+    group_names = [g[0] for g in sorted_groups] # list of group names
+    group_indices = [g[1] for g in sorted_groups] # list of group indices
+
+    # Seed handling for any potential stochastic elements
+    rng = np.random.default_rng(seed) # create a single master RNG state
+    seeds = rng.integers(0, 2**32-1, size=len(group_indices)) if seed is not None else [None]*len(group_indices) # generate seeds for each replicate
+
+    def _group_distance(indices, seed=None):
+        # Add any stochastic operations here using local_rng
+        return dcor.energy_distance(data[indices], data[adata.obs[category] == reference_name]) # compute the energy distance
     
-    with tqdm_joblib(desc="Experimental groups", total=len(groups)):
-        distances = Parallel(n_jobs=n_jobs)(
-            delayed(_group_distance)(indices)
-            for indices in groups.values()
-        )
+    # Use process_map instead of tqdm_joblib for parallel processing with progress bar
+    distances = process_map(_group_distance, group_indices, seeds, max_workers=n_jobs, desc="Experimental groups")
     
-    return dict(zip(groups.keys(), distances))
+    return dict(zip(group_names, distances))
 
 
 def _process_single_batch_energy_distance(
@@ -743,15 +760,13 @@ def _process_single_batch_energy_distance(
             n_min=n_min,
             control_string=control_string
         )
-        preprocessed = __preprocess_for_ed(subsampled)
-        valid_sgRNA, null_dist, results = compute_energy_distance(subsampled, **kwargs)
-        
-        valid_mask = adata.obs[sgRNA_column].isin(valid_sgRNA) | (adata.obs.perturbed == "False")
-        return adata[valid_mask].copy(), null_dist, results
+        preprocessed = __preprocess_for_ed(subsampled) # preprocess the subsampled data
+        valid_sgRNA, null_distances, experimental_group_distances = compute_energy_distance(preprocessed, **kwargs) # compute the energy distance
+        return valid_sgRNA, null_distances, experimental_group_distances # return the filtered data, null distribution, and results
         
     except ValueError as e:
         print(f"Skipping batch due to error: {str(e)}")
-        return adata, [], {}
+        return [], [], {}
 
 
 
@@ -798,14 +813,14 @@ def filter_sgRNA_energy_distance(
             print(f"Processing batch: {batch}")
             
         batch_adata = adata[adata.obs[batch_key] == batch].copy()
-        batch_filtered, null_dist, results = _process_single_batch_energy_distance(
+        valid_sgRNA, null_distances, experimental_group_distances = _process_single_batch_energy_distance(
             batch_adata, sgRNA_column, n_min, control_string, **kwargs
         )
         
         # Aggregate results
-        all_valid.update(results.keys())
-        combined_null.extend(null_dist)
-        combined_results.update(results)
+        all_valid.update(valid_sgRNA)
+        combined_null.extend(null_distances)
+        combined_results.update(experimental_group_distances)
 
     # Apply combined filtering to original data
     valid_mask = adata.obs[sgRNA_column].isin(all_valid) | (adata.obs.perturbed == "False")

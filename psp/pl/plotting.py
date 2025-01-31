@@ -363,37 +363,57 @@ def plot_percentage_perturbations_by_repression(
     plt.tight_layout()
     return fig
 
-def plot_energy_distance_threshold(null_distances, results, threshold=0.75):    
+def plot_energy_distance_threshold(null_distances, experimental_group_distances, threshold=0.75):    
     """
     Plot energy distance distribution with gamma fit and threshold line.
     
     Parameters:
         null_distances: Array of null distribution energy distances
-        results: Dictionary of {sgRNA: energy_distance} for perturbing guides
+        experimental_group_distances: Dictionary of {experimental_group: energy_distance} for experimental groups
         threshold: Probability threshold for gamma distribution cutoff
     """
     # Fit gamma distribution
     alpha_mle, loc_mle, beta_mle = gamma.fit(null_distances, loc=0.3)
     
     # Prepare data
-    perturbed_edist = np.array(list(results.values()))
+    perturbed_edist = np.array(list(experimental_group_distances.values()))
     x = np.linspace(np.min(null_distances), np.max(null_distances), 1000)
     pdf_fitted = gamma.pdf(x, alpha_mle, loc=loc_mle, scale=beta_mle)
     thresh_val = gamma.ppf(threshold, alpha_mle, loc=loc_mle, scale=beta_mle)
 
-    # Create plot
-    plt.figure(figsize=(10, 6))
-    plt.hist(null_distances, bins=300, density=True, alpha=0.6, 
-             color='b', label="Control sgRNA")
-    plt.hist(np.clip(perturbed_edist, 0, np.max(null_distances)*3), bins=300,
-             density=True, alpha=0.6, color='g', label="Perturbing sgRNA")
-    plt.plot(x, pdf_fitted, 'r-', lw=2, label="Fitted Gamma Distribution")
-    plt.axvline(x=thresh_val, color='r', linestyle='--', 
-                label=f"{threshold*100}% Probability Threshold")
+    # Create plot with consistent styling
+    fig, ax = plt.subplots(figsize=(10, 6), facecolor='white')
     
-    plt.xlabel("Energy Distance")
-    plt.ylabel("Density")
-    plt.legend()
+    # Histogram styling matching gRNA distribution plot
+    ax.hist(null_distances, bins=300, density=True, alpha=0.6, 
+            color='#AEC6CF', label="Control sgRNA")
+    ax.hist(np.clip(perturbed_edist, 0, np.max(null_distances)*3), bins=300,
+            density=True, alpha=0.6, color='#FFB3BA', label="Perturbing sgRNA")
+    
+    # Line styling consistent with other plots
+    ax.plot(x, pdf_fitted, color='#367CB7', lw=2.5, label="Fitted Gamma Distribution")
+    ax.axvline(x=thresh_val, color='#5CB39D', linestyle='--', lw=2, 
+               label=f"{threshold*100}% Threshold")
+
+    # Axis styling
+    ax.set_xlabel("Energy Distance", fontsize=12)
+    ax.set_ylabel("Density", fontsize=12)
+    ax.set_title("Energy Distance Distribution", fontsize=14, pad=12)
+    
+    # Grid and spine configuration
+    ax.grid(True, axis='y', linestyle='--', alpha=0.6)
+    ax.set_axisbelow(True)
+    for spine in ['top', 'right']:
+        ax.spines[spine].set_visible(False)
+    for spine in ['left', 'bottom']:
+        ax.spines[spine].set_linewidth(1.5)
+        ax.spines[spine].set_color('#444444')
+
+    # Legend and ticks
+    ax.legend(frameon=False, fontsize=10, loc='upper right')
+    ax.tick_params(axis='both', which='major', labelsize=10, width=1.5)
+
+    plt.tight_layout()
     plt.show()
     
     return thresh_val
