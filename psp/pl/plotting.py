@@ -417,3 +417,55 @@ def plot_energy_distance_threshold(null_distances, experimental_group_distances,
     plt.show()
     
     return thresh_val
+
+
+def plot_filtered_genes_inverted(results_dict, p_value_threshold=0.05, l2fc_threshold=0, deg_cutoff=25, min_total_deg=10):
+    significant_counts = {}
+
+    for perturbation, df in results_dict.items():
+        p_values = df['padj']
+        l2fc = df['log2FoldChange']
+        upregulated = (p_values < p_value_threshold) & (l2fc > l2fc_threshold)
+        downregulated = (p_values < p_value_threshold) & (l2fc < -l2fc_threshold)
+        total_deg = upregulated.sum() + downregulated.sum()
+        if total_deg >= min_total_deg:  # Filter to show only perturbations with more than min_total_deg DEGs
+            significant_counts[perturbation] = (upregulated.sum(), downregulated.sum())
+
+    if not significant_counts:
+        print("No perturbations with significant DEGs above the specified threshold.")
+        return
+
+    max_count = 500
+    # Sort in ascending order
+    ordered_perturbations = sorted(significant_counts.keys(), key=lambda x: abs(sum(significant_counts[x])),reverse=True)
+
+    fig, ax = plt.subplots(figsize=(6, 6))  # Inverted dimensions
+    for idx, perturbation in enumerate(ordered_perturbations):
+        total_deg = significant_counts[perturbation][0] + significant_counts[perturbation][1]
+        color_up = '#BDE7BD' if total_deg > deg_cutoff else '#BDE7BD'
+        color_down = '#FFB6B3' if total_deg > deg_cutoff else '#FFB6B3'
+        ax.barh(idx, significant_counts[perturbation][0], color=color_up)  # Horizontal bar for upregulated
+        ax.barh(idx, -significant_counts[perturbation][1], color=color_down)  # Horizontal bar for downregulated
+    
+    ax.set_ylabel('Perturbation Number (>10 DEGs)')
+    ax.set_xlabel(f'Count of Significant Genes (p-value < {p_value_threshold})')
+
+    # Place y-ticks every 100 perturbations and flip them
+    ax.set_yticks(range(0, len(ordered_perturbations), 100))
+
+    ax.set_xlim(-max_count, max_count)
+    ax.set_xticks(np.arange(-max_count, max_count + 1, step=100))  # Set x-ticks every 100
+    ax.set_xticklabels([str(abs(int(tick))) if abs(tick) != max_count else ">500" for tick in np.arange(-max_count, max_count + 1, step=100)], fontsize=12)
+    ax.legend(['Upregulated', 'Downregulated'], loc='upper right')
+    ax.axvline(0, color='black', linewidth=0.5)
+    ax.grid(False)
+    plt.subplots_adjust(left=0.2, right=0.95, top=0.95, bottom=0.05)
+
+    # Style the axes
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['bottom'].set_linewidth(1.5)
+    ax.spines['left'].set_linewidth(1.5)
+
+    plt.show()
+    return fig, (ordered_perturbations, [significant_counts[pert] for pert in ordered_perturbations])
