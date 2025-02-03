@@ -1,6 +1,5 @@
 import psp.utils as utils
-
-
+import psp.pl as pl
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -64,6 +63,7 @@ def _generate_pseudo_bulk_replicates_for_de(
     
     return pseudo_bulk_df, metadata_df
 
+
 def deseq2(data: pd.DataFrame, metadata: pd.DataFrame, contrast: List[str], alpha: float = 0.05) -> pd.DataFrame:
     """
     Perform differential expression analysis using DESeq2.
@@ -96,6 +96,118 @@ def deseq2(data: pd.DataFrame, metadata: pd.DataFrame, contrast: List[str], alph
     results = stat_res.results_df
     
     return results
+
+def save_DEG_df(
+    results_dict: Dict[str, pd.DataFrame], 
+    p_threshold: float = 0.05, 
+    save: bool = True, 
+    filepath: str = None, 
+    preserve_batch_info: bool = False,
+    adata: ad.AnnData = None
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Save and display differentially expressed genes (DEGs) with batch handling.
+
+    Parameters:
+        results_dict: Dictionary of DESeq2 results (keys may contain batch names)
+        p_threshold: Adjusted p-value threshold for filtering
+        save: Whether to save results to file
+        filepath: Output path for Excel file
+        preserve_batch_info: Maintain batch identifiers in column names if False
+        adata: AnnData object to store results in .uns['DEG_summary']
+
+    Returns:
+        Tuple of (combined_df - DataFrame of DEG results, summary_df - DataFrame of summary statistics (DEGs per perturbation))
+    """
+    final_dict = {}
+
+    for full_key, df in results_dict.items():
+        # Extract base gene target name if needed
+        if preserve_batch_info:
+            gene_target = full_key
+        else:
+            gene_target = full_key.split('_')[0]  # Simple split - modify if using different delimiter
+
+        # Filter and sort
+        filtered_df = df[df['padj'] < p_threshold]
+        l2fc_sorted = filtered_df.sort_values('log2FoldChange')
+        
+        # Create or append to existing entries
+        if f'{gene_target}_DEGs' in final_dict:
+            # Handle multiple entries by extending lists #TODO: This is a hack to handle multiple entries for the same gene target, really we need to handle this better via sets or something.
+            final_dict[f'{gene_target}_DEGs'].extend(l2fc_sorted.index.tolist())
+            final_dict[f'{gene_target}_L2FC'].extend(l2fc_sorted['log2FoldChange'].tolist())
+            final_dict[f'{gene_target}_Adj_P'].extend(l2fc_sorted['padj'].tolist())
+        else:
+            # Create new entries
+            final_dict[f'{gene_target}_DEGs'] = l2fc_sorted.index.tolist()
+            final_dict[f'{gene_target}_L2FC'] = l2fc_sorted['log2FoldChange'].tolist()
+            final_dict[f'{gene_target}_Adj_P'] = l2fc_sorted['padj'].tolist()
+
+    # Sort gene targets by number of DEGs
+    sorted_targets = sorted(
+        [k.replace('_DEGs', '') for k in final_dict if k.endswith('_DEGs')],
+        key=lambda x: len(final_dict[f'{x}_DEGs']), 
+        reverse=True
+    )
+
+    # Create ordered dictionary and pad lists
+    ordered_dict = {}
+    max_length = 0
+    for target in sorted_targets:
+        for suffix in ['_DEGs', '_L2FC', '_Adj_P']:
+            key = target + suffix
+            ordered_dict[key] = final_dict[key]
+            max_length = max(max_length, len(final_dict[key]))
+
+    # Pad all lists to equal length
+    for key in ordered_dict:
+        ordered_dict[key] += [None] * (max_length - len(ordered_dict[key]))
+
+    # Create and save DataFrame
+    combined_df = pd.DataFrame(ordered_dict)
+    
+    # Create summary statistics
+    summary_data = []
+    for target in sorted_targets:
+        # Split target into perturbation and batch components
+        if '_' in target:
+            perturbation, batch = target.split('_', 1)  # Split on first underscore only
+        else:
+            perturbation, batch = target, "N/A"
+        
+        # Get all DEGs and their L2FC values
+        degs = final_dict[f'{target}_DEGs']
+        l2fcs = final_dict[f'{target}_L2FC']
+        
+        # Calculate counts
+        valid_degs = [deg for deg in degs if deg is not None]
+        total_degs = len(valid_degs)
+        upregulated = sum(1 for fc in l2fcs if fc is not None and fc > 0)
+        downregulated = sum(1 for fc in l2fcs if fc is not None and fc < 0)
+        
+        summary_data.append({
+            'Perturbation': perturbation,
+            'Batch': batch,
+            'Total_DEGs': total_degs,
+            'Total_Upregulated_DEGs': upregulated,
+            'Total_Downregulated_DEGs': downregulated
+        })
+    summary_df = pd.DataFrame(summary_data)
+    del summary_data
+    
+    if save and filepath:
+        with pd.ExcelWriter(filepath) as writer:
+            combined_df.to_excel(writer, sheet_name='DEG Results', index=False)
+            summary_df.to_excel(writer, sheet_name='DEGs Per Perturbation', index=False)
+    
+    # Store in AnnData if provided
+    if adata is not None:
+        adata.uns["DEGs_for_each_perturbation"] = combined_df
+        adata.uns['Number_of_DEGs_per_perturbation'] = summary_df
+    
+    return combined_df, summary_df
+
 
 def run_deseq2_analysis(
     adata: ad.AnnData,
@@ -239,98 +351,7 @@ def run_deseq2_analysis(
         adata=adata
     )
 
-    return final_results
+    fig = pl.plot_number_of_DEGs(adata)
 
-
-def save_DEG_df(
-    results_dict: Dict[str, pd.DataFrame], 
-    p_threshold: float = 0.05, 
-    save: bool = True, 
-    filepath: str = None, 
-    preserve_batch_info: bool = False,
-    adata: ad.AnnData = None
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    """
-    Save and display differentially expressed genes (DEGs) with batch handling.
-
-    Parameters:
-        results_dict: Dictionary of DESeq2 results (keys may contain batch names)
-        p_threshold: Adjusted p-value threshold for filtering
-        save: Whether to save results to file
-        filepath: Output path for Excel file
-        preserve_batch_info: Maintain batch identifiers in column names if False
-        adata: AnnData object to store results in .uns['DEG_summary']
-
-    Returns:
-        Tuple of (combined_df - DataFrame of DEG results, summary_df - DataFrame of summary statistics (DEGs per perturbation))
-    """
-    final_dict = {}
-
-    for full_key, df in results_dict.items():
-        # Extract base gene target name if needed
-        if preserve_batch_info:
-            gene_target = full_key
-        else:
-            gene_target = full_key.split('_')[0]  # Simple split - modify if using different delimiter
-
-        # Filter and sort
-        filtered_df = df[df['padj'] < p_threshold]
-        l2fc_sorted = filtered_df.sort_values('log2FoldChange')
-        
-        # Create or append to existing entries
-        if f'{gene_target}_DEGs' in final_dict:
-            # Handle multiple entries by extending lists #TODO: This is a hack to handle multiple entries for the same gene target, really we need to handle this better via sets or something.
-            final_dict[f'{gene_target}_DEGs'].extend(l2fc_sorted.index.tolist())
-            final_dict[f'{gene_target}_L2FC'].extend(l2fc_sorted['log2FoldChange'].tolist())
-            final_dict[f'{gene_target}_Adj_P'].extend(l2fc_sorted['padj'].tolist())
-        else:
-            # Create new entries
-            final_dict[f'{gene_target}_DEGs'] = l2fc_sorted.index.tolist()
-            final_dict[f'{gene_target}_L2FC'] = l2fc_sorted['log2FoldChange'].tolist()
-            final_dict[f'{gene_target}_Adj_P'] = l2fc_sorted['padj'].tolist()
-
-    # Sort gene targets by number of DEGs
-    sorted_targets = sorted(
-        [k.replace('_DEGs', '') for k in final_dict if k.endswith('_DEGs')],
-        key=lambda x: len(final_dict[f'{x}_DEGs']), 
-        reverse=True
-    )
-
-    # Create ordered dictionary and pad lists
-    ordered_dict = {}
-    max_length = 0
-    for target in sorted_targets:
-        for suffix in ['_DEGs', '_L2FC', '_Adj_P']:
-            key = target + suffix
-            ordered_dict[key] = final_dict[key]
-            max_length = max(max_length, len(final_dict[key]))
-
-    # Pad all lists to equal length
-    for key in ordered_dict:
-        ordered_dict[key] += [None] * (max_length - len(ordered_dict[key]))
-
-    # Create and save DataFrame
-    combined_df = pd.DataFrame(ordered_dict)
-    
-    # Create summary statistics
-    summary_data = []
-    for target in sorted_targets:
-        deg_count = len([g for g in final_dict[f'{target}_DEGs'] if g is not None])
-        summary_data.append({
-            'Perturbation': target,
-            'Total_DEGs': deg_count,
-        })
-    summary_df = pd.DataFrame(summary_data)
-    
-    if save and filepath:
-        with pd.ExcelWriter(filepath) as writer:
-            combined_df.to_excel(writer, sheet_name='DEG Results', index=False)
-            summary_df.to_excel(writer, sheet_name='DEGs Per Perturbation', index=False)
-    
-    # Store in AnnData if provided
-    if adata is not None:
-        adata.uns["DEGs_for_each_perturbation"] = combined_df
-        adata.uns['Number_of_DEGs_per_perturbation'] = summary_df
-    
-    return combined_df, summary_df
+    return final_results, fig
 

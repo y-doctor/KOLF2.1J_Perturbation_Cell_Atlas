@@ -469,3 +469,76 @@ def plot_filtered_genes_inverted(results_dict, p_value_threshold=0.05, l2fc_thre
 
     plt.show()
     return fig, (ordered_perturbations, [significant_counts[pert] for pert in ordered_perturbations])
+
+
+def plot_number_of_DEGs(adata: ad.AnnData, min_total_deg: int = 10, max_count: int = 500, p_value_threshold: float = 0.05) -> plt.Figure:
+    """
+    Plot the number of differentially expressed genes (DEGs) for each perturbation.
+
+    This function generates a horizontal bar plot showing the count of upregulated and downregulated DEGs
+    for each perturbation that has a total number of DEGs above a specified threshold.
+
+    Parameters:
+    - adata (anndata.AnnData): The AnnData object containing the DEG summary in `adata.uns`.
+    - min_total_deg (int, optional): Minimum number of total DEGs required to include a perturbation in the plot. Default is 10.
+    - max_count (int, optional): Maximum count for the x-axis limit. Default is 500.
+    - p_value_threshold (float, optional): Adjusted p-value threshold for significance. Default is 0.05.
+
+    Returns:
+    - matplotlib.figure.Figure: The matplotlib figure object containing the plot.
+    """
+
+    # Define colors for upregulated and downregulated DEGs
+    color_up = '#BDE7BD'
+    color_down = '#FFB6B3'
+
+    # Filter and sort the summary DataFrame based on the total number of DEGs
+    summary_df = adata.uns['Number_of_DEGs_per_perturbation']
+    summary_df = summary_df[summary_df['Total_DEGs'] >= min_total_deg]
+    summary_df = summary_df.sort_values(by='Total_DEGs', ascending=False)
+
+    # Extract upregulated and downregulated DEG counts
+    upregulated = summary_df['Total_Upregulated_DEGs']
+    downregulated = summary_df['Total_Downregulated_DEGs']
+
+    # Get the list of perturbations ordered by total DEGs
+    ordered_perturbations = summary_df.index.tolist()
+
+    # Create a figure and axis for the plot
+    fig, ax = plt.subplots(figsize=(6, 6))
+
+    # Plot horizontal bars for each perturbation
+    for idx, perturbation in enumerate(ordered_perturbations):
+        up_count = upregulated[perturbation]
+        down_count = downregulated[perturbation]
+        ax.barh(idx, up_count, color=color_up)
+        ax.barh(idx, -down_count, color=color_down)
+
+    # Set axis labels
+    ax.set_ylabel(f'Perturbation Number (> {min_total_deg} DEGs)')
+    ax.set_xlabel(f'Count of Significant Genes (adj. p < {p_value_threshold})')
+
+    # Configure y-ticks and x-ticks
+    ax.set_yticks(range(0, len(ordered_perturbations), 100))
+    ax.set_xlim(-max_count, max_count)
+    ax.set_xticks(np.arange(-max_count, max_count + 1, step=100))
+    ax.set_xticklabels([str(abs(int(tick))) if abs(tick) != max_count else ">500" for tick in np.arange(-max_count, max_count + 1, step=100)], fontsize=12)
+
+    # Add legend and vertical line at x=0
+    ax.legend(['Upregulated', 'Downregulated'], loc='upper right')
+    ax.axvline(0, color='black', linewidth=0.5)
+
+    # Disable grid and adjust subplot parameters
+    ax.grid(False)
+    plt.subplots_adjust(left=0.2, right=0.95, top=0.95, bottom=0.05)
+
+    # Style the axes
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['bottom'].set_linewidth(1.5)
+    ax.spines['left'].set_linewidth(1.5)
+
+    # Display the plot
+    plt.show()
+
+    return fig
