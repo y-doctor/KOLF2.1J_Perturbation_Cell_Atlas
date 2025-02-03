@@ -429,20 +429,22 @@ def _process_batch_knockdown(
 # Assesing sgRNA which induce a Transcriptional Phenotype via Energy Distance
 ######################################
 
-def normalize_log_scale(adata: ad.AnnData, batch_sensitive: bool = True) -> ad.AnnData:
+def normalize_log_scale(adata: ad.AnnData, batch_sensitive: bool = True, scale: bool = True) -> ad.AnnData:
     """
     Normalize and log-scale the expression data for each batch in the AnnData object.
 
     Parameters:
     - adata (anndata.AnnData): The AnnData object containing the data to normalize.
     - batch_sensitive (bool): If True, process batches separately; otherwise, normalize across all data. Default is True.
-
+    - scale (bool): If True, scale the data; otherwise, only normalize. Default is True.
     Returns:
     - adata (anndata.AnnData): The AnnData object with normalized and log-scaled data.
     """
     if batch_sensitive:
         # Validate input structure
         utils.validate_anndata(adata, required_obs=["perturbed", "batch"])
+
+        adata.X = adata.layers['counts'].copy()
 
         # Split the AnnData object by batch
         batches = utils.split_by_batch(adata, copy=True)
@@ -457,7 +459,8 @@ def normalize_log_scale(adata: ad.AnnData, batch_sensitive: bool = True) -> ad.A
             
             # Log transform and scale the data
             sc.pp.log1p(batch_adata)
-            sc.pp.scale(batch_adata)
+            if scale:
+                sc.pp.scale(batch_adata)
 
             processed_batches.append(batch_adata)
         
@@ -467,6 +470,8 @@ def normalize_log_scale(adata: ad.AnnData, batch_sensitive: bool = True) -> ad.A
         # Validate input structure
         utils.validate_anndata(adata, required_obs=["perturbed"])
 
+        adata.X = adata.layers['counts'].copy()
+
         # Calculate median NTC counts for the entire dataset
         median_NTC = np.median(list(utils.get_ntc_view(adata).obs.n_UMI_counts))
         
@@ -475,7 +480,8 @@ def normalize_log_scale(adata: ad.AnnData, batch_sensitive: bool = True) -> ad.A
         
         # Log transform and scale the data
         sc.pp.log1p(adata)
-        sc.pp.scale(adata)
+        if scale:
+            sc.pp.scale(adata)
 
     return adata
 

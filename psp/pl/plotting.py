@@ -10,6 +10,8 @@ from plotnine import (
 )
 import psp.utils as utils
 from scipy.stats import gamma
+from scipy.cluster import hierarchy
+from typing import Union, Tuple
 
 def plot_cells_per_perturbation(adata: ad.AnnData, perturbation_key: str = 'gene_target', perturbed_key: str = 'perturbed', highlight_threshold: int = 100, y_max: int = 600) -> plt.Figure:
     """
@@ -542,3 +544,162 @@ def plot_number_of_DEGs(adata: ad.AnnData, min_total_deg: int = 10, max_count: i
     plt.show()
 
     return fig
+
+
+def plot_degs_dotplot(
+    adata: ad.AnnData,
+    degs_key: str = "Number_of_DEGs_per_perturbation",
+    min_degs: int = 10,
+    top_n: int = 20
+) -> plt.Figure:
+    """
+    Plot dot plot of DEG counts from AnnData, labeling top perturbations with arrows.
+
+    Parameters:
+    - adata: AnnData object containing DEG results in .uns
+    - degs_key: Key in adata.uns containing DEG summary DataFrame
+    - min_degs: Minimum number of DEGs required to include a perturbation
+    - top_n: Number of top perturbations to label with arrows
+
+    Returns:
+    - matplotlib Figure object
+    """
+    # Extract and sort DEG data
+    degs_df = adata.uns[degs_key]
+    degs_df = degs_df[degs_df['Total_DEGs'] >= min_degs]
+    degs_df = degs_df.sort_values('Total_DEGs', ascending=False)
+    
+    # Prepare data for plotting
+    perturbations = degs_df.index.tolist()
+    deg_counts = degs_df['Total_DEGs'].tolist()
+    top_perturbations = perturbations[:top_n]
+
+    # Create plot
+    fig, ax = plt.subplots(figsize=(6, 6))
+    x_values = range(len(perturbations))
+    
+    # Plot all points
+    ax.plot(x_values, deg_counts, '.', color='#417dc1')
+    
+    # Annotation positioning
+    annotation_x = 500
+    y_offset = 80
+    y_positions = [max(deg_counts) - i * y_offset for i in range(top_n)]
+
+    # Add labels for top perturbations
+    for idx, pert in enumerate(perturbations):
+        if pert in top_perturbations:
+            ax.annotate(
+                pert,
+                xy=(idx, deg_counts[idx]),
+                xytext=(annotation_x, y_positions[top_perturbations.index(pert)]),
+                textcoords='data',
+                ha='left',
+                fontsize=14,
+                arrowprops=dict(facecolor='black', arrowstyle='->', lw=0.2)
+            )
+
+    # Style plot
+    ax.set_ylabel("Number of DEGs", fontsize=12)
+    ax.set_xlabel(f"Perturbations Inducing >= {min_degs} DEGs", fontsize=12)
+    ax.set_xticks([])
+    ax.set_ylim(bottom=min_degs)
+    ax.tick_params(axis='y', labelsize=20)
+    ax.grid(False)
+    
+    # Axis styling
+    ax.set_facecolor('white')
+    for spine in ['top', 'right']:
+        ax.spines[spine].set_visible(False)
+    for spine in ['bottom', 'left']:
+        ax.spines[spine].set_linewidth(1.5)
+
+    plt.tight_layout()
+    plt.show()
+    return fig
+
+
+def plot_perturbation_correlation(
+    adata: ad.AnnData,
+    key: str = "perturbation_correlation",
+    use_clustered: bool = True,
+    cmap: str = "RdYlBu",
+    center: float = 0,
+    vmin: float = -.5,
+    vmax: float = 0.5,
+    figsize: tuple[float, float] = (10, 8)
+) -> plt.Figure:
+    """
+    Visualize correlation matrix using pre-computed clustering if available.
+    
+    Parameters:
+        use_clustered: Whether to use pre-computed clustered data
+    """
+    corr_data = adata.uns[key]
+    
+    if use_clustered and 'clustered_dataframe' in corr_data:
+        plot_df = corr_data['clustered_dataframe']
+        title_suffix = " (Clustered)"
+    else:
+        plot_df = corr_data['dataframe']
+        title_suffix = ""
+    
+    fig, ax = plt.subplots(figsize=figsize)
+    sns.heatmap(
+        plot_df,
+        cmap=cmap,
+        center=center,
+        vmin=vmin,
+        vmax=vmax,
+        xticklabels=False,
+        yticklabels=False,
+        cbar_kws={'shrink': 0.5},
+        ax=ax
+    )
+    ax.set_title(f"Perturbation Correlation Matrix{title_suffix}")
+    return fig
+
+def plot_perturbation_correlation_kde(
+    adata: ad.AnnData,
+    key: str = "perturbation_correlation",
+    figsize: tuple[float, float] = (10, 8)
+) -> plt.Figure:
+    """
+    Visualize the Kernel Density Estimate (KDE) of the perturbation correlation coefficients.
+
+    Parameters:
+        adata (ad.AnnData): The AnnData object containing the correlation data.
+        key (str): The key in adata.uns where the correlation matrix is stored. Default is "perturbation_correlation".
+        figsize (tuple[float, float]): The size of the figure to be created. Default is (10, 8).
+
+    Returns:
+        plt.Figure: The figure object containing the KDE plot.
+    """
+    # Extract the raw correlation matrix from the AnnData object
+    corr_data = adata.uns[key]['raw_matrix']
+    
+    # Create a mask to exclude the diagonal elements (self-correlations)
+    mask = np.where(~np.eye(corr_data.shape[0], dtype=bool))
+    
+    # Flatten the masked correlation data
+    corr_data = corr_data[mask].flatten()
+    
+    # Create the figure and axis for the plot
+    fig, ax = plt.subplots(figsize=figsize)
+    
+    # Plot the KDE of the correlation coefficients
+    sns.kdeplot(corr_data, ax=ax, cmap="RdYlBu", shade=True, shade_lowest=False)
+    
+    # Set the title and labels for the axes
+    ax.set_title("KDE of Perturbation Correlation")
+    ax.set_xlabel("Correlation Coefficient")
+    ax.set_ylabel("Density")
+    
+    # Adjust layout and display options
+    plt.tight_layout()
+    plt.grid(False)
+    plt.show()
+    
+    return fig
+
+

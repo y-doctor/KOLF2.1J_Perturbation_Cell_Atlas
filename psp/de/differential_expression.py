@@ -204,7 +204,7 @@ def save_DEG_df(
     # Store in AnnData if provided
     if adata is not None:
         adata.uns["DEGs_for_each_perturbation"] = combined_df
-        adata.uns['Number_of_DEGs_per_perturbation'] = summary_df
+        adata.uns['Pertubation_Stats'] = summary_df
     
     return combined_df, summary_df
 
@@ -351,7 +351,8 @@ def run_deseq2_analysis(
         adata=adata
     )
 
-    fig = pl.plot_number_of_DEGs(adata)
+    fig1 = pl.plot_number_of_DEGs(adata)
+    fig2 = pl.plot_degs_dotplot(adata)
 
-    return final_results, fig
+    return final_results, fig1, fig2
 
