@@ -107,17 +107,61 @@ def run_deseq2_analysis(
     alpha: float = 0.05,
     n_jobs: int = -1,
     seed: int = 42,
-    batch_key: str = None,
+    batch_key: str = "batch",
+    save: bool = False,
+    save_filepath: str = None,
+    p_threshold: float = 0.05,
+    preserve_batch_info: bool = None,
 ) -> Dict[str, pd.DataFrame]:
     """
-    Run DESeq2 analysis with batch-aware processing, concatenating results with batch identifiers.
+    Perform batch-aware differential expression analysis using DESeq2 with pseudo-bulk replicates.
+    
+    Generates pseudo-bulk samples for each gene target and matched NTC controls, then performs
+    differential expression analysis either across all cells or within specified batches.
 
-    Parameters:
-        batch_key: If provided, results will be stored as {gene_target}_{batch}
-    Returns:
-        Dictionary where keys are either:
-        - gene_target (when no batch_key)
-        - gene_target_batch (when batch_key provided)
+    Parameters
+    ----------
+    adata : anndata.AnnData
+        AnnData object containing single-cell data with gene expression counts
+    gene_target_obs_column : str, optional
+        Column in adata.obs containing gene target identifiers, by default "gene_target"
+    ntc_cells_delimiter : str, optional
+        Identifier for non-targeting control cells, by default "NTC"
+    n_replicates : int, optional
+        Number of pseudo-bulk replicates to generate per condition, by default 3
+    sample_fraction : float, optional
+        Fraction of cells to sample for each pseudo-bulk replicate, by default 0.7
+    layer : str, optional
+        Layer in AnnData containing count data to use, by default None (uses .X)
+    alpha : float, optional
+        Significance threshold for adjusted p-values, by default 0.05
+    n_jobs : int, optional
+        Number of parallel jobs for processing, by default -1 (all available cores)
+    seed : int, optional
+        Random seed for reproducibility, by default 42
+    batch_key : str, optional
+        Column in adata.obs specifying batches for batch-aware analysis, by default "batch"
+    save : bool, optional
+        Whether to save results using save_DEG_df, by default False
+    save_filepath : str, optional
+        File path for saving results (required if save=True), by default None
+    p_threshold : float, optional
+        Adjusted p-value threshold for DEG filtering during saving, by default 0.05
+    preserve_batch_info : bool, optional
+        Whether to maintain batch identifiers in output columns, by default None
+        (auto-detected based on batch_key presence if None)
+
+    Returns
+    -------
+    Dict[str, pd.DataFrame]
+        Dictionary of DESeq2 results where keys are either:
+        - {gene_target} (when no batch_key)
+        - {gene_target}_{batch} (when batch_key provided)
+
+    Examples
+    --------
+    >>> de_results = run_deseq2_analysis(adata, batch_key="batch")
+    >>> de_results = run_deseq2_analysis(adata, save=True, save_filepath="results.xlsx")
     """
     ntc_cells = np.where(adata.obs[gene_target_obs_column] == ntc_cells_delimiter)[0]
     gene_targets = list(adata.obs[gene_target_obs_column].unique())
@@ -169,7 +213,7 @@ def run_deseq2_analysis(
                 print(f"Error processing batch {batch_name}: {str(e)}")
                 continue
                 
-        return combined_results
+        final_results = combined_results
     else:
         # Original single-batch processing
         results = process_map(
@@ -179,7 +223,23 @@ def run_deseq2_analysis(
             desc="Running DE analysis", 
             total=len(gene_targets)
         )
-        return dict(zip(gene_targets, results))
+        final_results = dict(zip(gene_targets, results))
+
+    # Handle saving and AnnData storage
+    if preserve_batch_info is None:
+        preserve_batch_info = bool(batch_key)
+    
+    # Always store results in AnnData, optionally save to file
+    save_DEG_df(
+        final_results,
+        p_threshold=p_threshold,
+        save=save,
+        filepath=save_filepath,
+        preserve_batch_info=preserve_batch_info,
+        adata=adata
+    )
+
+    return final_results
 
 
 def save_DEG_df(
@@ -187,7 +247,8 @@ def save_DEG_df(
     p_threshold: float = 0.05, 
     save: bool = True, 
     filepath: str = None, 
-    preserve_batch_info: bool = False
+    preserve_batch_info: bool = False,
+    adata: ad.AnnData = None
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Save and display differentially expressed genes (DEGs) with batch handling.
@@ -197,8 +258,8 @@ def save_DEG_df(
         p_threshold: Adjusted p-value threshold for filtering
         save: Whether to save results to file
         filepath: Output path for Excel file
-        num_show: Number of top/bottom DEGs to display
         preserve_batch_info: Maintain batch identifiers in column names if False
+        adata: AnnData object to store results in .uns['DEG_summary']
 
     Returns:
         Tuple of (combined_df - DataFrame of DEG results, summary_df - DataFrame of summary statistics (DEGs per perturbation))
@@ -251,22 +312,25 @@ def save_DEG_df(
     # Create and save DataFrame
     combined_df = pd.DataFrame(ordered_dict)
     
+    # Create summary statistics
+    summary_data = []
+    for target in sorted_targets:
+        deg_count = len([g for g in final_dict[f'{target}_DEGs'] if g is not None])
+        summary_data.append({
+            'Perturbation': target,
+            'Total_DEGs': deg_count,
+        })
+    summary_df = pd.DataFrame(summary_data)
+    
     if save and filepath:
-        # Create summary statistics
-        summary_data = []
-        for target in sorted_targets:
-            deg_count = len([g for g in final_dict[f'{target}_DEGs'] if g is not None])
-            summary_data.append({
-                'Perturbation': target,
-                'Total_DEGs': deg_count,
-            })
-        summary_df = pd.DataFrame(summary_data)
-        
         with pd.ExcelWriter(filepath) as writer:
             combined_df.to_excel(writer, sheet_name='DEG Results', index=False)
             summary_df.to_excel(writer, sheet_name='DEGs Per Perturbation', index=False)
     
+    # Store in AnnData if provided
+    if adata is not None:
+        adata.uns["DEGs_for_each_perturbation"] = combined_df
+        adata.uns['Number_of_DEGs_per_perturbation'] = summary_df
+    
     return combined_df, summary_df
 
-
-#TODO: In adata.uns add the number of DEGs per perturbation.
