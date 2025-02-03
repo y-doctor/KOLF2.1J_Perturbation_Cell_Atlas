@@ -18,3 +18,5 @@ Steps for default workflow:
 14. psp.utils.compute_perturbation_correlation()
 15. psp.pl.plot_perturbation_correlation()
 16. psp.pl.plot_perturbation_correlation_kde()
+17. psp.da.compute_MDE_map()
+18. psp.da.map_complexes()

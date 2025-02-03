@@ -23,3 +23,7 @@ dependencies:
   - myst-parser       # Optional: If you want to include Markdown files
   - pip:
     - pydeseq2
+    - plotly
+    - pymde
+    - leidenalg
+    - igraph

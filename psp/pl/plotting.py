@@ -10,8 +10,8 @@ from plotnine import (
 )
 import psp.utils as utils
 from scipy.stats import gamma
-from scipy.cluster import hierarchy
-from typing import Union, Tuple
+from psp.utils import validate_anndata
+import scanpy as sc
 
 def plot_cells_per_perturbation(adata: ad.AnnData, perturbation_key: str = 'gene_target', perturbed_key: str = 'perturbed', highlight_threshold: int = 100, y_max: int = 600) -> plt.Figure:
     """
@@ -703,3 +703,29 @@ def plot_perturbation_correlation_kde(
     return fig
 
 
+def plot_perturbation_embedding_density(adata: ad.AnnData, groupby: str = "gene_target", perturbations: list[str] = None, title: str = None, figsize: tuple[float, float] = (10, 8), color_map: str = "Reds") -> plt.Figure:
+    """
+    Visualize the embedding density of perturbations in the UMAP space.
+
+    Parameters:
+        adata (ad.AnnData): The AnnData object containing the UMAP data.
+        groupby (str): The key in adata.obs that indicates the perturbation group. Default is "gene_target".
+        perturbations (list[str]): A list of perturbations to include in the plot. If None, all perturbations will be included.
+        title (str): The title of the plot. If None, a default title will be used.
+        figsize (tuple[float, float]): The size of the figure to be created. Default is (10, 8).
+
+    Returns:
+        plt.Figure: The figure object containing the embedding density plot.
+    """
+    # Validate input
+    validate_anndata(adata, required_obs=[groupby])
+    
+    # Ensure all perturbations are present in adata.obs[groupby]
+    if perturbations is not None:
+        if not all(pert in adata.obs[groupby] for pert in perturbations):
+            raise ValueError(f"All perturbations must be present in adata.obs[{groupby}], missing: {set(perturbations) - set(adata.obs[groupby])}")
+    
+    sc.tl.embedding_density(adata, groupby=groupby)
+    fig = sc.pl.embedding_density(adata, groupby=groupby, group=perturbations, return_fig=True, color_map=color_map, title=title, figsize=figsize, fg_dotsize = 100)
+    plt.show()
+    return fig
