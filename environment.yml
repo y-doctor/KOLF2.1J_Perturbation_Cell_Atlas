@@ -9,6 +9,7 @@ dependencies:
   - anndata
   - numpy
   - pandas
+  - jupyter
   - matplotlib
   - seaborn
   - plotnine
