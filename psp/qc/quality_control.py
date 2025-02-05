@@ -1,4 +1,12 @@
 # Data analysis
+# Import plotting functions
+from psp.pl.plotting import (
+    plot_gRNA_distribution,
+    plot_gRNA_UMI_distribution,
+    plot_cells_per_guide_distribution,
+    doublet_detection_sanity_check
+)
+
 import scanpy as sc
 import muon as mu
 import anndata as ad
@@ -35,7 +43,7 @@ sc.settings.verbosity = 4
 sc.settings.set_figure_params(dpi=100, facecolor='white')
 
 # Import plotting functions
-from pl.plotting import (
+from psp.pl.plotting import (
     plot_gRNA_distribution,
     plot_gRNA_UMI_distribution,
     plot_cells_per_guide_distribution,
@@ -502,14 +510,10 @@ def default_qc(input_dict: dict) -> ad.AnnData:
     
     # Read in the 10x matrix data
     print("Reading 10x matrix data...")
-    mdata = read_in_10x_mtx(
+    adata = read_in_10x_mtx(
         input_dict['mtx_dir'],
         input_dict['save_directory']
     )
-    
-    # Extract RNA data
-    print("Extracting RNA data...")
-    adata = mdata.mod["rna"]
     
     # Assign protospacers
     print("Assigning protospacers...")
