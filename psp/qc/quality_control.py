@@ -299,6 +299,8 @@ def assign_gene_ids(adata: ad.AnnData, gene_id_filepath: str, obs_key: str = "ge
     # Remove invalid gene targets
     adata = __remove_invalid_gene_targets(adata, obs_key=obs_key, var_key=var_key)
 
+    return adata
+
 
 def assign_metadata(
     adata: ad.AnnData, 
@@ -355,7 +357,7 @@ def assign_metadata(
         adata.obs["treatment"] = [treatment_dict[cell.split('-')[1]] for cell in adata.obs.index]
 
     # Assign gene IDs
-    assign_gene_ids(adata, gene_id_filepath, obs_key, var_key, ntc_label)
+    adata = assign_gene_ids(adata, gene_id_filepath, obs_key, var_key, ntc_label)
 
     # Make counts layer
     _make_counts_layer(adata)
@@ -507,6 +509,12 @@ def default_qc(input_dict: dict) -> ad.AnnData:
     for key in required_keys:
             assert key in input_dict, f"Missing required key in input_dict: {key}"
             assert isinstance(input_dict[key], str) and input_dict[key], f"{key} must be a non-empty string."
+
+    # Validate file paths
+    assert os.path.exists(input_dict['mtx_dir']), f"mtx_dir does not exist: {input_dict['mtx_dir']}"
+    assert os.path.exists(input_dict['protospacer_calls_file']), f"protospacer_calls_file does not exist: {input_dict['protospacer_calls_file']}"
+    assert os.path.exists(input_dict['aggregation_csv']), f"aggregation_csv does not exist: {input_dict['aggregation_csv']}"
+    assert os.path.exists(input_dict['gene_id_filepath']), f"gene_id_filepath does not exist: {input_dict['gene_id_filepath']}"
     
     # Read in the 10x matrix data
     print("Reading 10x matrix data...")

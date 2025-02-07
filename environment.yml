@@ -14,6 +14,7 @@ dependencies:
   - seaborn
   - plotnine
   - scipy
+  - scikit-misc
   - scikit-learn
   - joblib
   - tqdm

@@ -4,6 +4,23 @@ import pandas as pd
 import numpy as np
 import scanpy as sc
 
+def read_anndata(filepath: str) -> ad.AnnData:
+    """
+    Read an AnnData object from a file.
+
+    Parameters:
+    - filepath: Path to the AnnData object file
+
+    Returns:
+    - AnnData object
+    """
+    #Validate file path
+    assert os.path.exists(filepath), f"File path does not exist: {filepath}"
+
+    #Read in the AnnData object
+    return ad.read_h5ad(filepath)
+
+
 def split_by_batch(adata: ad.AnnData, copy: bool = True) -> dict[str, ad.AnnData]:
     """
     Split the AnnData object by batch.
@@ -77,7 +94,7 @@ def __save_by_dict(adata_dict: dict[str, ad.AnnData], save_path: str) -> None:
     for key, adata in adata_dict.items():
         adata.write(os.path.join(save_path, f"{key}.h5ad")) 
 
-def validate_anndata(adata: ad.AnnData, required_obs: list[str] = None, required_varm: list[str] = None) -> None:
+def validate_anndata(adata: ad.AnnData, required_obs: list[str] = None, required_var: list[str] = None) -> None:
     """
     Validate an AnnData object's structure.
     
@@ -94,10 +111,10 @@ def validate_anndata(adata: ad.AnnData, required_obs: list[str] = None, required
         if missing_obs:
             raise ValueError(f"Missing required obs columns: {missing_obs}")
             
-    if required_varm:
-        missing_varm = [key for key in required_varm if key not in adata.varm]
-        if missing_varm:
-            raise ValueError(f"Missing required varm entries: {missing_varm}")
+    if required_var:
+        missing_var = [key for key in required_var if key not in adata.var]
+        if missing_var:
+            raise ValueError(f"Missing required var entries: {missing_var}")
 
 def get_perturbed_view(adata: ad.AnnData) -> ad.AnnData:
     """
@@ -333,4 +350,62 @@ def count_sgRNAs_per_perturbation(adata: ad.AnnData, gRNA_key: str = "gRNA", gen
     adata.uns["Perturbation_Stats"]["sgRNAs_per_perturbation"] = gRNA_counts.reindex(adata.uns["Perturbation_Stats"].index, fill_value=0)
 
         
-       
+
+
+def minidataset(adata, gene_targets: list):
+    """
+    Subset the AnnData object to only include specified gene targets and a maximum of 
+    100 NTC cells from each batch.
+
+    Parameters:
+    ----------
+    adata : ad.AnnData
+        The AnnData object containing the single-cell data.
+    gene_targets : list
+        A list of gene target identifiers to include in the subset.
+
+    Returns:
+    -------
+    ad.AnnData
+        A new AnnData object containing only the specified gene targets and up to 100 
+        NTC cells per batch.
+    """
+
+    # Create masks for the specified gene targets and NTC cells
+    target_mask = adata.obs['gene_target'].isin(gene_targets)
+    ntc_mask = adata.obs['gene_target'] == "NTC"
+
+    target_cells = adata[target_mask].obs.index.tolist()
+
+    if 'batch' in adata.obs.columns:
+        # For each batch, take up to 100 NTC cells
+        ntc_cells = adata.obs[ntc_mask].groupby('batch').apply(lambda x: x.index[:100]).explode().tolist()
+    else:
+        # Fallback if there is no batch column: take the first 100 NTC cells overall
+        ntc_cells = adata[ntc_mask].obs.index.tolist()[:100]
+
+    adata_subset = adata[adata.obs.index.isin(target_cells + ntc_cells)].copy()
+    return adata_subset
+
+
+def view_gene_targets(adata: ad.AnnData, gene_targets: list) -> ad.AnnData:
+    """
+    Create a view of the AnnData object containing only the specified gene targets.
+
+    This function subsets the AnnData object to include only the specified gene targets.
+
+    Parameters:
+    ----------
+    adata : ad.AnnData
+        The AnnData object containing the single-cell data.
+    gene_targets : list
+        A list of gene target identifiers to include in the subset.
+
+    Returns:
+    -------
+    ad.AnnData
+        A new AnnData object containing only the specified gene targets.
+    """
+    return adata[adata.obs['gene_target'].isin(gene_targets)]
+    
+    

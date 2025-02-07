@@ -101,7 +101,7 @@ def plot_umis_per_cell(adata: ad.AnnData, umi_key: str = 'n_UMI_counts') -> plt.
     fig, ax = plt.subplots(figsize=(5, 5))
     
     # Plot the violin
-    sns.violinplot(data=umis_per_cell, ax=ax, inner='box', color='#EDF6FF', linewidth=2, saturation=1)
+    sns.violinplot(data=umis_per_cell, ax=ax, inner='box', color='#EDF6FF', linewidth=2, saturation=1,linecolor="#367CB7")
 
     # Set x and y labels
     ax.set_xlabel('Single Cells', fontsize=12)
@@ -232,22 +232,12 @@ def plot_sorted_bars(
     repression_threshold: float = None,
     cells_threshold: int = None,
     label_interval: int = 100,
-    invert_y: bool = False
+    invert_y: bool = False,
+    vmin: float = 0,
+    vmax: float = None,
 ) -> plt.Figure:
     """
     Plots sorted bar charts for knockdown efficiency or cell counts per sgRNA.
-    
-    Parameters:
-    - data: Pandas Series with sgRNA names as index and values to plot
-    - ylabel: Label for Y-axis
-    - title: Plot title
-    - repression_threshold: Optional threshold line for repression percentage
-    - cells_threshold: Optional threshold line for cell counts
-    - label_interval: Interval for x-axis labels
-    - invert_y: Whether to invert Y-axis
-    
-    Returns:
-    - matplotlib Figure object
     """
     sorted_items = data.sort_values(ascending=False)
     keys = sorted_items.index.tolist()
@@ -267,7 +257,15 @@ def plot_sorted_bars(
     plt.yticks(fontsize=12)
     
     if invert_y:
-        ax.invert_yaxis()
+        # Set the limits explicitly for an inverted plot
+        if vmax is None:
+            vmax = ax.get_ylim()[1]
+        if vmin is None:
+            vmin = ax.get_ylim()[0]
+        ax.set_ylim(vmax, vmin)
+    else:
+        if vmin is not None and vmax is not None:
+            ax.set_ylim(vmin, vmax)
     
     ax.grid(axis='y', linestyle='--', alpha=0.7)
     ax.grid(axis='x', visible=False)
@@ -282,12 +280,13 @@ def plot_sorted_bars(
 def plot_percentage_perturbations_by_repression(
     adata: ad.AnnData,
     perturbation_col: str = "gene_target",
-    knockdown_col: str = "total_knockdown",
+    knockdown_col: str = "target_knockdown",
     knockdown_threshold: float = 0.3,
     figsize: tuple[float, float] = (5, 5),
     line_color: str = "#367CB7",
     fill_color: str = "#EDF6FF",
-    threshold_color: str = "#5CB39D"
+    threshold_color: str = "#5CB39D",
+    total_perturbations: int = None
 ) -> plt.Figure:
     """
     Visualize the cumulative percentage of perturbations achieving specific knockdown levels.
@@ -301,6 +300,7 @@ def plot_percentage_perturbations_by_repression(
     - line_color: Color for the main trend line
     - fill_color: Color for the area under the curve
     - threshold_color: Color for the threshold reference line
+    - total_perturbations: Total number of perturbations in the dataset
     
     Returns:
     - matplotlib Figure object containing the visualization
@@ -363,6 +363,9 @@ def plot_percentage_perturbations_by_repression(
     ax.grid(axis='y', linestyle='--', alpha=0.7)
 
     plt.tight_layout()
+    if total_perturbations is not None:
+        count = (sorted_knockdown >= knockdown_threshold).sum()
+        print(f"Percentage of perturbations achieving {knockdown_threshold*100}% repression: {count/total_perturbations*100:.2f}% ({count}/{total_perturbations})")
     return fig
 
 def plot_energy_distance_threshold(null_distances, experimental_group_distances, threshold=0.75):    
