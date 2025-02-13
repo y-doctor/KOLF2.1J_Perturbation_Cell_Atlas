@@ -7,3 +7,4 @@ setup.py
 KOLF_Perturbation_Atlas_Analysis/input_files/
 Analysis_Scripts/
 psp/aei_utils/subset-bam_linux
+alu_editing/

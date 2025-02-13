@@ -11,7 +11,8 @@ from tqdm.contrib.concurrent import process_map
 import dcor
 from typing import Tuple, Dict, List
 from sklearn.svm import OneClassSVM
-
+import os
+from functools import partial
 
 ######################################
 # NTC Processing Utilities
@@ -602,6 +603,27 @@ def __preprocess_for_ed(adata_subsampled: ad.AnnData) -> ad.AnnData:
     return adata_subsampled
 
 
+def single_null_computation(rng, control_data, reference_data, sample_size):
+    """
+    Compute the energy distance for a single replicate by subsampling from control data.
+
+    Parameters:
+        rng : np.random.Generator
+            Random number generator.
+        control_data : np.ndarray
+            The control data from which to sample.
+        reference_data : np.ndarray
+            The reference data for computing energy distance.
+        sample_size : int
+            Number of samples to draw from control_data.
+            
+    Returns:
+        float: The computed energy distance.
+    """
+    indices = rng.choice(control_data.shape[0], sample_size, replace=False)
+    return dcor.energy_distance(control_data[indices], reference_data)
+
+
 def compute_energy_distance(
     adata: ad.AnnData,
     category: str = "ed_category",
@@ -611,7 +633,7 @@ def compute_energy_distance(
     ref_sample_size: int = 20,
     use_rep: str = "X_pca",
     n_jobs: int = -1,
-    threshold: float = 0.75
+    threshold: float = 0.75,
 ) -> Tuple[np.ndarray, List[float], Dict[str, float]]:
     """
     Compute energy distances between experimental groups and reference population.
@@ -636,6 +658,9 @@ def compute_energy_distance(
     # Data preparation
     data = _get_energy_distance_data(adata, use_rep)
     reference_data, control_data = _extract_reference_control_data(adata, data, category, reference_name, control_name)
+
+    if n_jobs == -1:
+        n_jobs = os.cpu_count()
 
     # Null distribution computation
     null_distances = _compute_null_distribution(
@@ -696,21 +721,28 @@ def _compute_null_distribution(
     n_jobs: int,
     seed: int = None
 ) -> List[float]:
-    """Compute null distribution through parallel sampling"""
-    def _single_null_computation(rng):
-        indices = rng.choice(control_data.shape[0], sample_size, replace=False)
-        return dcor.energy_distance(control_data[indices], reference_data)
-    
-    # Create independent RNG states for each replicate to ensure reproducibility
+    """Compute null distribution through parallel sampling using a picklable function."""
+    # Create independent RNG states for reproducibility
     if seed is not None:
-        rng = np.random.default_rng(seed) # create a single master RNG state
-        seeds = rng.integers(0, 2**32-1, size=n_replicates) # generate seeds for each replicate
-        rngs = [np.random.default_rng(s) for s in seeds] # create independent RNG states for each replicate
+        rng = np.random.default_rng(seed)
+        seeds = rng.integers(0, 2**32-1, size=n_replicates)
+        rngs = [np.random.default_rng(s) for s in seeds]
     else:
-        rngs = [np.random.default_rng() for _ in range(n_replicates)] # create a single master RNG state
-
-    # Use process_map instead of tqdm_joblib for parallel processing with progress bar
-    return process_map(_single_null_computation, rngs, max_workers=n_jobs, desc="Null distribution")
+        rngs = [np.random.default_rng() for _ in range(n_replicates)]
+    
+    # Ensure n_jobs is positive, convert -1 to available CPU cores
+    if n_jobs == -1:
+        n_jobs = os.cpu_count() or 1
+    
+    # Compute an optimal chunksize (you can adjust this heuristic as needed)
+    chunksize = 64
+    
+    # Use partial to bind additional arguments to the global function
+    fn = partial(single_null_computation, control_data=control_data,
+                 reference_data=reference_data,
+                 sample_size=sample_size)
+    
+    return process_map(fn, rngs, max_workers=n_jobs, chunksize=chunksize, desc="Null distribution")
 
 def _compute_group_distances(
     adata: ad.AnnData,
@@ -719,29 +751,44 @@ def _compute_group_distances(
     reference_name: str,
     n_jobs: int,
     seed: int = None
-) -> Dict[str, float]:
-    """Calculate energy distances for all experimental groups with reproducibility"""
+) -> dict:
+    """Calculate energy distances for all experimental groups with reproducibility."""
+    # Create dictionary mapping group names (except for reference_name) to indices
     groups = {
         g: idx 
         for g, idx in adata.obs.groupby(category).groups.items()
         if g != reference_name
     }
     
-    # Create deterministic order for groups
-    sorted_groups = sorted(groups.items(), key=lambda x: x[0]) # sort groups by name
-    group_names = [g[0] for g in sorted_groups] # list of group names
-    group_indices = [g[1] for g in sorted_groups] # list of group indices
+    # Sort groups for deterministic behavior
+    sorted_groups = sorted(groups.items(), key=lambda x: x[0])
+    group_names = [g[0] for g in sorted_groups]
+    group_indices = [g[1] for g in sorted_groups]
 
-    # Seed handling for any potential stochastic elements
-    rng = np.random.default_rng(seed) # create a single master RNG state
-    seeds = rng.integers(0, 2**32-1, size=len(group_indices)) if seed is not None else [None]*len(group_indices) # generate seeds for each replicate
+    # Create RNG seeds for each group
+    rng = np.random.default_rng(seed) if seed is not None else np.random.default_rng()
+    seeds = (rng.integers(0, 2**32 - 1, size=len(group_indices))
+             if seed is not None else [None] * len(group_indices))
 
-    def _group_distance(indices, seed=None):
-        # Add any stochastic operations here using local_rng
-        return dcor.energy_distance(data[indices], data[adata.obs[category] == reference_name]) # compute the energy distance
+    # Ensure n_jobs is positive
+    if n_jobs == -1:
+        n_jobs = os.cpu_count() or 1
+
+    # Set a chunksize. For example, for lightweight tasks you might set:
+    chunksize =  64  # or compute a recommended value, e.g., max(1, len(group_indices) // (n_jobs * 4))
     
-    #Compute the energy distance for each experimental group in parallel
-    distances = process_map(_group_distance, group_indices, seeds, max_workers=n_jobs, desc="Experimental groups")
+    # Precompute the mapping and reference boolean mask outside the parallel loop.
+    pos_mapping = adata.obs.index
+    ref_bool_idx = (adata.obs[category] == reference_name).to_numpy()
+
+    # Then update the partial binding:
+    fn = partial(group_distance_computation,
+                 data=data,
+                 pos_mapping=pos_mapping,
+                 ref_bool_idx=ref_bool_idx)
+    
+    # Compute energy distances in parallel using process_map
+    distances = process_map(fn, group_indices, seeds, max_workers=n_jobs, chunksize=chunksize, desc="Experimental groups")
     
     return dict(zip(group_names, distances))
 
@@ -759,7 +806,8 @@ def _process_single_batch_energy_distance(
             adata,
             category=sgRNA_column,
             n_min=n_min,
-            control_string=control_string
+            control_string=control_string,
+            **kwargs
         )
         preprocessed = __preprocess_for_ed(subsampled) # preprocess the subsampled data
         valid_sgRNA, null_distances, experimental_group_distances = compute_energy_distance(preprocessed, **kwargs) # compute the energy distance
@@ -801,7 +849,7 @@ def filter_sgRNA_energy_distance(
     if batch_key is None:
         return _process_single_batch_energy_distance(adata, sgRNA_column, n_min, control_string, **kwargs)
     else:
-        utils.validate_anndata(adata, obs_keys=[batch_key])
+        utils.validate_anndata(adata, required_obs=[batch_key])
 
     # Split by batches and process individually
     batches = adata.obs[batch_key].unique()
@@ -1048,3 +1096,24 @@ def remove_perturbations_by_cell_threshold(
         print(f"Cells kept: {final_cells}/{initial_cells} ({final_cells/initial_cells:.1%})")
 
     return adata_filtered
+
+def group_distance_computation(indices, seed, data, pos_mapping, ref_bool_idx):
+    """
+    Compute the energy distance for a given group of cell indices using precomputed constants.
+
+    Parameters:
+        indices (array-like): Group cell identifiers (labels) for the experimental group.
+        seed: A seed value (unused here, but retained for API compatibility).
+        data (np.ndarray): Data representation (e.g., PCA coordinates) with rows corresponding 
+                           to the order in pos_mapping.
+        pos_mapping (pd.Index): Precomputed mapping from cell labels to row positions (e.g., adata.obs.index).
+        ref_bool_idx (np.ndarray): Precomputed boolean mask for the reference population.
+        
+    Returns:
+        float: The computed energy distance.
+    """
+    # Convert cell labels (indices) to positional indices using the precomputed mapping.
+    pos_indices = pos_mapping.get_indexer(indices)
+    
+    # Compute and return the energy distance between the experimental group and the reference group.
+    return dcor.energy_distance(data[pos_indices], data[ref_bool_idx])

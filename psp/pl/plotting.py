@@ -406,7 +406,7 @@ def plot_energy_distance_threshold(null_distances, experimental_group_distances,
     ax.set_title("Energy Distance Distribution", fontsize=14, pad=12)
     
     # Grid and spine configuration
-    ax.grid(True, axis='y', linestyle='--', alpha=0.6)
+    ax.grid(False)
     ax.set_axisbelow(True)
     for spine in ['top', 'right']:
         ax.spines[spine].set_visible(False)
