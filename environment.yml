@@ -21,6 +21,7 @@ dependencies:
   - ipython
   - dcor
   - sphinx
+  - mscorefonts
   - sphinx_rtd_theme  # Optional: A popular theme for Sphinx documentation
   - myst-parser       # Optional: If you want to include Markdown files
   - pip:

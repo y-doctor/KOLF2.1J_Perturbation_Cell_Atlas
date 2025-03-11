@@ -487,7 +487,7 @@ def __subsample_anndata_for_energy_distance(
     n_min: int,
     ref_size: int = 3000,
     control_string: str = "NTC",
-    seed: int = 42
+    seed: int = None
 ) -> ad.AnnData:
     """Subsample cells while maintaining biological diversity through stratified sampling.
     
@@ -519,10 +519,7 @@ def __subsample_anndata_for_energy_distance(
         raise ValueError(f"Stratification category '{category}' not found in adata.obs")
     
     # Set random seed if provided
-    if seed is not None:
-        rng = np.random.default_rng(seed)
-    else:
-        rng = np.random.default_rng()
+    rng = np.random.default_rng(seed)
 
     # Initialize tracking metadata and storage
     adata.obs["ed_category"] = "None"
@@ -557,26 +554,11 @@ def __subsample_anndata_for_energy_distance(
     return adata[keep_indices].copy()
 
 
-def __preprocess_for_ed(adata_subsampled: ad.AnnData) -> ad.AnnData:
-    """Preprocess subsampled data for energy distance analysis as per scPerturb (Peidli et al. 2024).
-    
-    Performs key preprocessing steps:
-    1. Selects highly variable genes using a class-balanced subset (excluding NTC cells)
-    2. Copies gene selection to full subsampled data
-    3. Computes PCA and nearest neighbor graph
-    
-    Parameters:
-        adata_subsampled: Subsampled AnnData object containing reference, 
-            NTC, and experimental cells from `subsample_for_ed`
-
-    Returns:
-        Processed AnnData object with PCA and neighbor graph calculated.
-        Adds/modifies:
-        - `.var['highly_variable']`: Boolean mask of selected genes
-        - `.obsm['X_pca']`: PCA coordinates
-        - `.uns['neighbors']`: Nearest neighbor graph
-        - `.obsp['distances']`, `.obsp['connectivities']`: NN matrices
-    """
+def __preprocess_for_ed(adata_subsampled: ad.AnnData, seed: int = None) -> ad.AnnData:
+    """Preprocess subsampled data with seed control"""
+    if seed is not None:
+        np.random.seed(seed)  # SET GLOBAL SEED FOR SEURAT
+        
     n_var_max = 2000  # Maximum number of features to select
     
     # Calculate HVGs using class-balanced subset (exclude NTC cells)
@@ -634,6 +616,7 @@ def compute_energy_distance(
     use_rep: str = "X_pca",
     n_jobs: int = -1,
     threshold: float = 0.75,
+    seed: int = None
 ) -> Tuple[np.ndarray, List[float], Dict[str, float]]:
     """
     Compute energy distances between experimental groups and reference population.
@@ -668,7 +651,8 @@ def compute_energy_distance(
         reference_data,
         ref_sample_size,
         n_replicates,
-        n_jobs
+        n_jobs,
+        seed
     )
 
     # Experimental group computation
@@ -677,7 +661,8 @@ def compute_energy_distance(
         data,
         category,
         reference_name,
-        n_jobs
+        n_jobs,
+        seed
     )
 
     # Visualization and thresholding
@@ -722,13 +707,10 @@ def _compute_null_distribution(
     seed: int = None
 ) -> List[float]:
     """Compute null distribution through parallel sampling using a picklable function."""
-    # Create independent RNG states for reproducibility
-    if seed is not None:
-        rng = np.random.default_rng(seed)
-        seeds = rng.integers(0, 2**32-1, size=n_replicates)
-        rngs = [np.random.default_rng(s) for s in seeds]
-    else:
-        rngs = [np.random.default_rng() for _ in range(n_replicates)]
+    # Create independent RNG states using seed
+    master_rng = np.random.default_rng(seed)
+    seeds = master_rng.integers(0, 2**32-1, size=n_replicates)
+    rngs = [np.random.default_rng(s) for s in seeds]
     
     # Ensure n_jobs is positive, convert -1 to available CPU cores
     if n_jobs == -1:
@@ -743,6 +725,29 @@ def _compute_null_distribution(
                  sample_size=sample_size)
     
     return process_map(fn, rngs, max_workers=n_jobs, chunksize=chunksize, desc="Null distribution")
+
+
+def group_distance_computation(indices, seed, data, pos_mapping, ref_bool_idx):
+    """
+    Compute the energy distance for a given group of cell indices using precomputed constants.
+
+    Parameters:
+        indices (array-like): Group cell identifiers (labels) for the experimental group.
+        seed: A seed value (unused here, but retained for API compatibility).
+        data (np.ndarray): Data representation (e.g., PCA coordinates) with rows corresponding 
+                           to the order in pos_mapping.
+        pos_mapping (pd.Index): Precomputed mapping from cell labels to row positions (e.g., adata.obs.index).
+        ref_bool_idx (np.ndarray): Precomputed boolean mask for the reference population.
+        
+    Returns:
+        float: The computed energy distance.
+    """
+    # Convert cell labels (indices) to positional indices using the precomputed mapping.
+    pos_indices = pos_mapping.get_indexer(indices)
+    
+    # Compute and return the energy distance between the experimental group and the reference group.
+    return dcor.energy_distance(data[pos_indices], data[ref_bool_idx])
+
 
 def _compute_group_distances(
     adata: ad.AnnData,
@@ -765,10 +770,9 @@ def _compute_group_distances(
     group_names = [g[0] for g in sorted_groups]
     group_indices = [g[1] for g in sorted_groups]
 
-    # Create RNG seeds for each group
-    rng = np.random.default_rng(seed) if seed is not None else np.random.default_rng()
-    seeds = (rng.integers(0, 2**32 - 1, size=len(group_indices))
-             if seed is not None else [None] * len(group_indices))
+    # Create RNG seeds for each group using master seed
+    master_rng = np.random.default_rng(seed)
+    seeds = master_rng.integers(0, 2**32-1, size=len(group_indices))
 
     # Ensure n_jobs is positive
     if n_jobs == -1:
@@ -798,6 +802,7 @@ def _process_single_batch_energy_distance(
     sgRNA_column: str,
     n_min: int,
     control_string: str,
+    seed: int = None,
     **kwargs
 ) -> Tuple[ad.AnnData, List[float], Dict[str, float]]:
     """Process individual batch with energy distance filtering"""
@@ -807,12 +812,16 @@ def _process_single_batch_energy_distance(
             category=sgRNA_column,
             n_min=n_min,
             control_string=control_string,
+            seed=seed,
             **kwargs
         )
-        preprocessed = __preprocess_for_ed(subsampled) # preprocess the subsampled data
-        valid_sgRNA, null_distances, experimental_group_distances = compute_energy_distance(preprocessed, **kwargs) # compute the energy distance
-        return valid_sgRNA, null_distances, experimental_group_distances # return the filtered data, null distribution, and results
-        
+        preprocessed = __preprocess_for_ed(subsampled, seed=seed)
+        valid_sgRNA, null_distances, experimental_group_distances = compute_energy_distance(
+            preprocessed, 
+            seed=seed,
+            **kwargs
+        )
+        return valid_sgRNA, null_distances, experimental_group_distances
     except ValueError as e:
         print(f"Skipping batch due to error: {str(e)}")
         return [], [], {}
@@ -826,6 +835,7 @@ def filter_sgRNA_energy_distance(
     n_min: int = 20,
     control_string: str = "Non-Targeting",
     verbose: bool = True,
+    seed: int = None,
     **kwargs
 ) -> Tuple[ad.AnnData, List[float], Dict[str, float]]:
     """
@@ -838,6 +848,7 @@ def filter_sgRNA_energy_distance(
         n_min: Minimum cells per sgRNA for inclusion
         control_string: Identifier for control sgRNAs
         verbose: Whether to print progress updates
+        seed: Random seed for reproducible results
         **kwargs: Additional arguments for compute_energy_distance
     
     Returns:
@@ -847,7 +858,9 @@ def filter_sgRNA_energy_distance(
         - Combined experimental group results
     """
     if batch_key is None:
-        return _process_single_batch_energy_distance(adata, sgRNA_column, n_min, control_string, **kwargs)
+        return _process_single_batch_energy_distance(
+            adata, sgRNA_column, n_min, control_string, seed=seed, **kwargs
+        )
     else:
         utils.validate_anndata(adata, required_obs=[batch_key])
 
@@ -863,7 +876,7 @@ def filter_sgRNA_energy_distance(
             
         batch_adata = adata[adata.obs[batch_key] == batch].copy()
         valid_sgRNA, null_distances, experimental_group_distances = _process_single_batch_energy_distance(
-            batch_adata, sgRNA_column, n_min, control_string, **kwargs
+            batch_adata, sgRNA_column, n_min, control_string, seed=seed, **kwargs
         )
         
         # Aggregate results
@@ -1097,23 +1110,3 @@ def remove_perturbations_by_cell_threshold(
 
     return adata_filtered
 
-def group_distance_computation(indices, seed, data, pos_mapping, ref_bool_idx):
-    """
-    Compute the energy distance for a given group of cell indices using precomputed constants.
-
-    Parameters:
-        indices (array-like): Group cell identifiers (labels) for the experimental group.
-        seed: A seed value (unused here, but retained for API compatibility).
-        data (np.ndarray): Data representation (e.g., PCA coordinates) with rows corresponding 
-                           to the order in pos_mapping.
-        pos_mapping (pd.Index): Precomputed mapping from cell labels to row positions (e.g., adata.obs.index).
-        ref_bool_idx (np.ndarray): Precomputed boolean mask for the reference population.
-        
-    Returns:
-        float: The computed energy distance.
-    """
-    # Convert cell labels (indices) to positional indices using the precomputed mapping.
-    pos_indices = pos_mapping.get_indexer(indices)
-    
-    # Compute and return the energy distance between the experimental group and the reference group.
-    return dcor.energy_distance(data[pos_indices], data[ref_bool_idx])
