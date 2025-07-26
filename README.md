@@ -1,16 +1,18 @@
 # KOLF Perturbation Atlas
 
-A comprehensive computational framework for analyzing single-cell CRISPR perturbation sequencing data from the KOLF cell line. This project provides tools for quality control, preprocessing, differential expression analysis, and downstream analysis of perturbation effects.
+Computational framework for analyzing single-cell CRISPR perturbation sequencing data from the KOLF2.1J Perturbation Atlas. This project provides tools for quality control, preprocessing, differential expression analysis, and downstream analysis of perturbation effects.
 
 ## Overview
 
-The KOLF Perturbation Atlas is designed to process and analyze single-cell RNA sequencing data from CRISPR perturbation experiments. It provides a complete pipeline from raw data processing to advanced downstream analysis, including:
+The pipeline contains several submodules from raw data processing to advanced downstream analysis, including:
 
 - **Quality Control**: Cell and gene filtering, batch effect handling
 - **Preprocessing**: Normalization, cell filtering, perturbation validation
 - **Differential Expression**: Pseudo-bulk analysis with DESeq2
 - **Downstream Analysis**: Energy-based tests, perturbation correlation, complex mapping
 - **Visualization**: Comprehensive plotting utilities
+
+These are also extensible to analyzing other single cell CRISPRi Perturb-Seq experiments. 
 
 ## Project Structure
 
@@ -23,7 +25,7 @@ The KOLF Perturbation Atlas is designed to process and analyze single-cell RNA s
 │   ├── pl/                       # Plotting utilities
 │   ├── utils/                    # Utility functions
 │   └── notebooks/                # Example notebooks
-
+```
 
 ## Installation
 
