@@ -1,6 +1,6 @@
 # KOLF Perturbation Atlas
 
-Computational framework for analyzing single-cell CRISPR perturbation sequencing data from the KOLF2.1J Perturbation Atlas. This project provides tools for quality control, preprocessing, differential expression analysis, and downstream analysis of perturbation effects.
+Computational framework for analyzing single-cell CRISPR perturbation sequencing data from the KOLF2.1J Perturbation Cell Atlas. This project provides tools for quality control, preprocessing, differential expression analysis, and downstream analysis of perturbation effects.
 
 ## Overview
 
@@ -48,42 +48,9 @@ These are also extensible to analyzing other single cell CRISPRi Perturb-Seq exp
    conda activate perturb_seq_env
    ```
 
-## Quick Start
+## Usage
 
-See the processed data notebooks in the notebooks directory. Input files required to perform this analysis are present within the input_files subdirectory with the excpetion of the raw .h5mu files and protospacer_calls_per_cell files which can be found at: https://figshare.com/s/ee85bb1880921326249b
-
-## Key Features
-
-### Quality Control (`psp.qc`)
-- Cell and gene filtering based on quality metrics
-- Batch effect detection and handling
-- sgRNA assignment and validation
-- Dead cell detection using mitochondrial content
-
-### Preprocessing (`psp.pp`)
-- Data normalization and scaling
-- Cell filtering based on perturbation quality
-- sgRNA knockdown evaluation
-- Neighbor-corrected expression computation
-
-### Differential Expression (`psp.de`)
-- Pseudo-bulk generation for robust DE analysis
-- DESeq2 integration for statistical testing
-- Batch-aware processing
-- Multiple testing correction
-
-### Data Analysis (`psp.da`)
-- Energy-based statistical tests
-- Perturbation correlation analysis
-- Complex mapping and annotation
-- Pairwise energy distance computation
-
-### Visualization (`psp.pl`)
-- Comprehensive plotting utilities
-- Correlation matrices
-- Perturbation effect visualization
-- Quality control plots
-
+See the processed data notebooks in the notebooks directory. Input files required to perform this analysis are present within the input_files subdirectory other than the raw .h5mu files and protospacer_calls_per_cell files which can be found at: https://figshare.com/s/ee85bb1880921326249b
 
 ## License
 
