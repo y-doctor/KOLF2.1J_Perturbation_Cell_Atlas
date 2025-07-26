@@ -1,4 +1,4 @@
-name: perturb_seq_env
+3name: perturb_seq_env
 channels:
   - conda-forge
 dependencies:
@@ -30,3 +30,4 @@ dependencies:
     - pymde
     - leidenalg
     - igraph
+    - harmonypy

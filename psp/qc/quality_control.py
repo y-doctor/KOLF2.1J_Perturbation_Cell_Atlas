@@ -15,6 +15,7 @@ import pandas as pd
 import psp.utils as utils
 # Visualization
 import matplotlib.pyplot as plt
+plt.rcParams['font.family'] = 'Arial'
 import seaborn as sns
 from plotnine import (
     ggplot, aes, geom_bar, ggtitle, xlab, ylab,
@@ -49,6 +50,8 @@ from psp.pl.plotting import (
     plot_cells_per_guide_distribution,
     doublet_detection_sanity_check
 )
+
+from psp.utils import get_perturbed_view
 
 # Utility Functions
 def _data_statistics(adata_gex, adata_crispr, ntc_delimeter="Non-Targeting") -> None:
@@ -312,7 +315,8 @@ def assign_metadata(
     gene_id_filepath: str = None,
     obs_key: str = "gene_target_ensembl_id",
     var_key: str = "gene_ids",
-    ntc_label: str = "NTC"
+    ntc_label: str = "NTC",
+    ntc_sgRNA_prefix: str = "Non-Targeting"
 ) -> ad.AnnData:
     """
     Assigns metadata to the AnnData object and assigns gene IDs.
@@ -328,6 +332,7 @@ def assign_metadata(
     - obs_key: The key in .obs where the gene_target_ensembl_id will be stored (default is "gene_target_ensembl_id").
     - var_key: The key in .var corresponding to gene_ids in ENSEMBL format (default is "gene_ids").
     - ntc_label: Label for non-targeting controls (default is "NTC").
+    - ntc_sgRNA_prefix: Prefix for non-targeting controls in the sgRNA column (default is "Non-Targeting").
 
     Returns:
     - Updated AnnData object with assigned metadata and gene IDs.
@@ -351,6 +356,9 @@ def assign_metadata(
     if channel_dict is not None:
         adata.obs["channel"] = [channel_dict[cell.split('-')[1]] for cell in adata.obs.index]
         _assign_batch_id(adata)
+    
+    # Assign a perturbation column
+    adata.obs['perturbation'] = [gRNA if ntc_sgRNA_prefix not in gRNA else "NTC" for gRNA in adata.obs['gRNA']]
 
     # Assign treatment information if provided
     if treatment_dict is not None:
@@ -465,6 +473,49 @@ def dead_cell_qc(adata: ad.AnnData, count_MADs: int = 5, mt_MADs: int = 3, ribo_
 
     return adata
 
+def remove_batch_duplicates(adata, batch_key = 'batch', perturbation_key = 'perturbation', gene_target_key = 'gene_target'):
+    """
+    Remove perturbations present in multiple batches.
+
+    This function identifies perturbations that are present in multiple batches and removes them.
+    It uses the `batch_key` to identify batches and the `perturbation_key` to identify perturbations.
+
+    Parameters:
+    - adata: AnnData object containing single-cell data.
+    - batch_key: The key in .obs where the batch information is stored.
+    - perturbation_key: The key in .obs where the perturbation information is stored.
+    - gene_target_key: The key in .obs where the gene_target information is stored.
+    Returns:
+    - adata: AnnData object after removing perturbations present in multiple batches.
+    """
+    # Identify perturbations present in multiple batches
+    perturbed_view = get_perturbed_view(adata)
+    batch_counts = perturbed_view.obs.groupby(gene_target_key)[batch_key].nunique()
+    multiple_batches = batch_counts[batch_counts > 1].index.tolist()
+    print(f"Number of genes present in multiple batches: {len(multiple_batches)}")
+    print(f"({multiple_batches})")
+    print(f"Selecting the batch with the most sgRNAs per gene")
+    # Subset to gene targets that appear in multiple batches
+    multi_view = perturbed_view[perturbed_view.obs[gene_target_key].isin(multiple_batches)]
+
+    # Count unique sgRNAs per gene target and batch
+    sgRNA_counts = (
+        multi_view.obs
+        .groupby([gene_target_key, batch_key])[perturbation_key]
+        .nunique()
+        .reset_index(name="n_sgRNAs")
+    )
+
+    # For each gene target, pick the batch with the most sgRNAs (ties broken arbitrarily by idxmax)
+    best = sgRNA_counts.loc[sgRNA_counts.groupby(gene_target_key)["n_sgRNAs"].idxmax()]
+    best_batch_per_gene = dict(zip(best[gene_target_key], best[batch_key]))
+
+    # Keep only cells from the selected best batch for each gene target
+    mask = multi_view.obs[batch_key] == multi_view.obs[gene_target_key].map(best_batch_per_gene)
+    cells_to_remove = multi_view[~mask].obs.index
+    adata = adata[~adata.obs.index.isin(cells_to_remove)].copy()
+    return adata
+
 
 def default_qc(input_dict: dict) -> ad.AnnData:
     """
@@ -486,6 +537,8 @@ def default_qc(input_dict: dict) -> ad.AnnData:
         - 'obs_key': The key in .obs where the gene_target_ensembl_id will be stored
         - 'var_key': The key in .var corresponding to gene_ids in ENSEMBL format
         - 'ntc_label': Label for non-targeting control cells in the gene_id_filepath
+        - 'ntc_sgRNA_prefix': Prefix for non-targeting controls in the sgRNA column (default is "Non-Targeting")
+        - 'remove_batch_duplicates': Boolean indicating whether to remove perturbations across multiple batches (default is False)
         
     Optional parameters in input_dict:
         - 'mt_MADs': Number of MADs for mitochondrial filtering (default: 5)
@@ -527,7 +580,8 @@ def default_qc(input_dict: dict) -> ad.AnnData:
     print("Assigning protospacers...")
     adata = assign_protospacers(
         adata,
-        protospacer_calls_file_path=input_dict['protospacer_calls_file']
+        protospacer_calls_file_path=input_dict['protospacer_calls_file'],
+        NTC_Delimiter=input_dict['ntc_sgRNA_prefix']
     )
     
     # Create channel dictionary from aggregation CSV
@@ -549,11 +603,17 @@ def default_qc(input_dict: dict) -> ad.AnnData:
         gene_id_filepath=input_dict['gene_id_filepath'],
         obs_key=input_dict['obs_key'],
         var_key=input_dict['var_key'],
-        ntc_label=input_dict['ntc_label']
+        ntc_label=input_dict['ntc_label'],
+        ntc_sgRNA_prefix=input_dict['ntc_sgRNA_prefix']
     )
     
     # Convert n_gRNA_UMIs to string
     adata.obs['n_gRNA_UMIs'] = adata.obs['n_gRNA_UMIs'].astype(str)
+
+    if 'remove_batch_duplicates' in input_dict:
+        if input_dict['remove_batch_duplicates']:
+            print("Removing perturbations present in multiple batches...")
+            adata = remove_batch_duplicates(adata)
     
     # Save data after sgRNA assignment but before QC
     print(f"Saving pre-QC data to {input_dict['pre_qc_save_path']}...")
@@ -585,3 +645,7 @@ def default_qc(input_dict: dict) -> ad.AnnData:
     adata.write(input_dict['final_save_path'])
     
     return adata
+
+
+
+   

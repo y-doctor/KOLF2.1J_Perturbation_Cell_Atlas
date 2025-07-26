@@ -3,6 +3,7 @@ import psp.qc as qc
 from sklearn.ensemble import IsolationForest
 import scanpy as sc
 import matplotlib.pyplot as plt
+plt.rcParams['font.family'] = 'Arial'
 import numpy as np
 import requests
 import psp.utils as utils
@@ -54,7 +55,7 @@ def _get_cell_cycle_genes() -> tuple:
     return s_genes, g2m_genes
 
 
-def _scrub_ntc_pca(adata: ad.AnnData) -> None:
+def _scrub_ntc_pca(adata: ad.AnnData, batch_key: str = None) -> None:
     """
     Performs PCA on the AnnData object after identifying highly variable genes and scoring cell cycle phases.
 
@@ -80,8 +81,12 @@ def _scrub_ntc_pca(adata: ad.AnnData) -> None:
     sc.pp.log1p(adata)
     sc.pp.scale(adata)
     
-    # Perform PCA using top 100 PCs
-    sc.pp.pca(adata, n_comps=100)
+    # Perform PCA using top 50 PCs
+    sc.pp.pca(adata, n_comps=50)
+
+    if batch_key is not None:
+        sc.external.pp.harmony_integrate(adata, batch_key)
+
     
     # Plot the variance explained by each principal component
     plt.plot(100 * np.cumsum(adata.uns["pca"]["variance_ratio"]), '.')
@@ -90,7 +95,8 @@ def _scrub_ntc_pca(adata: ad.AnnData) -> None:
     plt.show()
 
 
-def _scrub_ntc_isolation_forest(adata: ad.AnnData, contamination_threshold: float) -> list:
+
+def _scrub_ntc_isolation_forest(adata: ad.AnnData, contamination_threshold: float,  batch_key: str = 'batch', sgRNA_column: str = "gRNA", min_cells_per_NTC_guide: int = 25) -> list:
     """
     Identifies outliers in the AnnData object using Isolation Forest and visualizes the results.
 
@@ -105,7 +111,10 @@ def _scrub_ntc_isolation_forest(adata: ad.AnnData, contamination_threshold: floa
     - list: A list of indices of the inlier cells.
     """
     # Use PCA representation for outlier detection
-    rep = "X_pca"
+    if "X_pca_harmony" in adata.obsm:
+        rep = "X_pca_harmony"
+    else:
+        rep = "X_pca"
     data = adata.obsm[rep]
     
     # Fit the Isolation Forest model
@@ -120,22 +129,36 @@ def _scrub_ntc_isolation_forest(adata: ad.AnnData, contamination_threshold: floa
     # Visualize the outlier classification Pre-Filtering
     sc.pp.neighbors(adata, use_rep=rep)
     sc.tl.umap(adata)
-    sc.pl.umap(adata, color=["is_outlier", "phase", "batch"], title="Pre-Filtering")
+    sc.pl.umap(adata, color=["is_outlier", "phase", "batch"], title="Pre-Filtering", frameon=False)
     sc.tl.embedding_density(adata)
-    sc.pl.embedding_density(adata)
+    sc.pl.embedding_density(adata, frameon=False)
     
     # Filter out outliers and visualize Post-Filtering
     adata_filtered = adata[adata.obs.is_outlier == "inlier", :]
+
+    # Filter out NTCs with too few cells
+    if batch_key is not None:
+        batch_counts = adata_filtered.obs.groupby([sgRNA_column, batch_key]).size().unstack(fill_value=0)
+        guides_to_keep = batch_counts[batch_counts.min(axis=1) >= min_cells_per_NTC_guide].index.tolist()
+        print(f"Removing {len(batch_counts) - len(guides_to_keep)} NTC guides due to having less than {min_cells_per_NTC_guide} cells in each batch")
+        adata_filtered = adata_filtered[adata_filtered.obs[sgRNA_column].isin(guides_to_keep)]
+    
+    else:
+        counts = adata_filtered.obs[sgRNA_column].value_counts()
+        guides_to_keep = counts[counts >= min_cells_per_NTC_guide].index.tolist()
+        print(f"Removing {len(counts) - len(guides_to_keep)} NTC guides due to having less than {min_cells_per_NTC_guide} cells")
+        adata_filtered = adata_filtered[adata_filtered.obs[sgRNA_column].isin(guides_to_keep)]
+
     sc.pp.neighbors(adata_filtered, use_rep=rep)
-    sc.tl.umap(adata_filtered)
-    sc.pl.umap(adata_filtered, color=["is_outlier", "phase", "batch"], title="Post-Filtering")
+    sc.tl.umap(adata_filtered, )
+    sc.pl.umap(adata_filtered, color=["is_outlier", "phase", "batch"], title="Post-Filtering", frameon=False)
     sc.tl.embedding_density(adata_filtered)
-    sc.pl.embedding_density(adata_filtered)
+    sc.pl.embedding_density(adata_filtered, frameon=False)
     
     return list(adata_filtered.obs.index)
 
 
-def clean_ntc_cells(adata: ad.AnnData, contamination_threshold: float = 0.3, NTC_whitelist_path: str = None) -> ad.AnnData:
+def clean_ntc_cells(adata: ad.AnnData, contamination_threshold: float = 0.3, NTC_whitelist_path: str = None, batch_key: str = None, sgRNA_column: str = "gRNA", min_cells_per_NTC_guide: int = 25) -> ad.AnnData:
     """
     Scrubs non-targeting control (NTC) cells to identify valid cells using PCA and Isolation Forest.
 
@@ -145,6 +168,7 @@ def clean_ntc_cells(adata: ad.AnnData, contamination_threshold: float = 0.3, NTC
     Parameters:
     - adata(anndata.AnnData): The AnnData object you wish to clean.
     - contamination_threshold (float): The proportion of outliers in the data (default is 0.3).
+    - batch_key (str, optional): The key in adata.obs that indicates the batch the cell belongs to.
     - NTC_whitelist_path (str, optional): The path to a file containing NTC sgRNAs to keep.
 
     Returns:
@@ -153,7 +177,8 @@ def clean_ntc_cells(adata: ad.AnnData, contamination_threshold: float = 0.3, NTC
     # Assertions to ensure required fields are present
     assert 'counts' in adata.layers, "The AnnData object must have a 'counts' layer."
     assert 'perturbed' in adata.obs, "The AnnData object must have a 'perturbed' column in obs which indicates whether the cell is perturbed or not."
-    assert 'batch' in adata.obs, "The AnnData object must have a 'batch' column in obs which indicates the batch the cell belongs to."
+    if batch_key is not None:
+        assert batch_key in adata.obs, f"The AnnData object must have a {batch_key} column in obs which indicates the batch the cell belongs to."
 
     adata_ntc = utils.get_ntc_view(adata).copy()
     print(f"Initial number of NTC Cells: {len(adata_ntc)}")
@@ -163,13 +188,14 @@ def clean_ntc_cells(adata: ad.AnnData, contamination_threshold: float = 0.3, NTC
         print(f"Number of NTC Cells after whitelist filtering: {len(adata_ntc)}")
     
     # Perform PCA on the data
-    _scrub_ntc_pca(adata_ntc)
+    if batch_key is not None:
+        _scrub_ntc_pca(adata_ntc, batch_key = batch_key)
+    else:
+        _scrub_ntc_pca(adata_ntc)
     
     # Identify valid NTC cells using Isolation Forest
-    valid_ntc_cells = _scrub_ntc_isolation_forest(adata_ntc, contamination_threshold)
+    valid_ntc_cells = _scrub_ntc_isolation_forest(adata_ntc, contamination_threshold, batch_key, sgRNA_column, min_cells_per_NTC_guide)
     print(f"Number of NTC Cells after Isolation Forest filtering: {len(valid_ntc_cells)}")
-    
-    # Filter the original AnnData object to keep only the valid NTC cells
     perturbed_mask = adata.obs.perturbed == "True"
     valid_ntc_mask = adata.obs.index.isin(valid_ntc_cells)
     valid_cells_mask = perturbed_mask | valid_ntc_mask
@@ -187,7 +213,8 @@ def evaluate_per_sgRNA_knockdown(
     repression_threshold: float = 30.0,
     cells_per_gRNA_threshold: int = 25,
     label_interval: int = 100,
-    batch_aware: bool = True
+    batch_aware: bool = True,
+    NTC_prefix: str = "Non-Targeting"
 ) -> ad.AnnData:
     """
     Evaluates sgRNA knockdown efficiency and filters cells/guides based on quality thresholds.
@@ -204,6 +231,7 @@ def evaluate_per_sgRNA_knockdown(
     - cells_per_gRNA_threshold: Minimum cells required per sgRNA
     - label_interval: X-axis label display interval for plots
     - batch_aware: Process batches separately if batch information exists
+    - NTC_prefix: Prefix for NTC sgRNAs
     
     Returns:
     - Filtered AnnData object with quality-controlled cells and guides
@@ -224,16 +252,17 @@ def evaluate_per_sgRNA_knockdown(
                     repression_threshold,
                     cells_per_gRNA_threshold,
                     label_interval,
-                    batch_name
+                    batch_name,
+                    NTC_prefix
                 )
             no_repression_guides.extend(nr_guides)
             invalid_cells.extend(nr_cells)
             low_count_guides.extend(lc_guides)
-        adata = _filter_cells_and_guides(adata, no_repression_guides, invalid_cells, low_count_guides)
+        adata = _filter_cells_and_guides(adata, no_repression_guides, invalid_cells, low_count_guides, repression_threshold, cells_per_gRNA_threshold)
     else:
         nr_guides, nr_cells, lc_guides  = _process_sgRNA_knockdown_batch(adata, repression_threshold, 
-                             cells_per_gRNA_threshold, label_interval, batch_name)
-        adata = _filter_cells_and_guides(adata, nr_guides, nr_cells, lc_guides)
+                             cells_per_gRNA_threshold, label_interval, batch_name, NTC_prefix)
+        adata = _filter_cells_and_guides(adata, nr_guides, nr_cells, lc_guides, repression_threshold, cells_per_gRNA_threshold)
         
 
     # Final filtering and visualization
@@ -254,12 +283,13 @@ def _process_sgRNA_knockdown_batch(
     repression_threshold: float,
     cells_threshold: int,
     label_interval: int,
-    batch_name: str
+    batch_name: str,
+    NTC_prefix: str
 ) -> ad.AnnData:
     """Process a single batch of data"""
     # Calculate median knockdown percentages
     mean_knockdown = 100 * batch_adata.obs.groupby("gRNA")["target_knockdown"].mean()
-    non_ntc = mean_knockdown[~mean_knockdown.index.str.contains("Non-Targeting")]
+    non_ntc = mean_knockdown[~mean_knockdown.index.str.contains(NTC_prefix)]
     
     # Plot knockdown distribution
     pl.plotting.plot_sorted_bars(
@@ -276,7 +306,7 @@ def _process_sgRNA_knockdown_batch(
     # Filter low-efficiency guides
     no_repression_guides = [
         g for g, val in mean_knockdown.items()
-        if "Non-Targeting" not in g and val <= repression_threshold
+        if NTC_prefix not in g and val <= repression_threshold
     ]
     batch_adata = batch_adata[~batch_adata.obs.gRNA.isin(no_repression_guides)]
     
@@ -291,11 +321,11 @@ def _process_sgRNA_knockdown_batch(
 
     return no_repression_guides, no_repression_cells, low_count_guides
 
-def _filter_cells_and_guides(adata: ad.AnnData, no_repression_guides: list, no_repression_cells: list, low_count_guides: list) -> ad.AnnData:
+def _filter_cells_and_guides(adata: ad.AnnData, no_repression_guides: list, no_repression_cells: list, low_count_guides: list, repression_threshold: float, cells_threshold: int) -> ad.AnnData:
     
-    print(f"Removing {len(no_repression_guides)} guides due to low repression")
-    print(f"Removing {len(no_repression_cells)} cells due to low repression")
-    print(f"Removing {len(low_count_guides)} guides due to low cell count per guide")
+    print(f"Removing {len(no_repression_guides)} guides due to low repression (less than {repression_threshold}%)")
+    print(f"Removing {len(no_repression_cells)} cells due to no repression (Target knockdown < 0)")
+    print(f"Removing {len(low_count_guides)} guides due to low cell count per guide (less than {cells_threshold} cells per guide)")
 
     mask = adata.obs.gRNA.isin(no_repression_guides) | adata.obs.gRNA.isin(low_count_guides)
     mask = mask | adata.obs.index.isin(no_repression_cells)
@@ -348,8 +378,6 @@ def knockdown_qc(
                 ntc_target_expr_col,
                 knockdown_col,
                 ntc_label,
-                layer,
-                normalized_layer
             )
             # Identify cells belonging to the current batch
             batch_mask = adata.obs['batch'] == batch_name
@@ -368,8 +396,6 @@ def knockdown_qc(
             ntc_target_expr_col,
             knockdown_col,
             ntc_label,
-            layer,
-            normalized_layer
         )
 
     return adata
@@ -1109,4 +1135,160 @@ def remove_perturbations_by_cell_threshold(
         print(f"Cells kept: {final_cells}/{initial_cells} ({final_cells/initial_cells:.1%})")
 
     return adata_filtered
+
+def compute_neighbor_corrected_expression(
+    adata: ad.AnnData,
+    perturbation_key: str = "gene_target",
+    control_string: str = "NTC",
+    n_neighbors: int = 20,
+    n_jobs: int = -1,
+    batch_key: str = None,
+    use_rep: str = "X_pca",
+    n_pcs: int = 50,
+    chunked_pca: bool = False,
+    chunk_size: int = 5000
+) -> ad.AnnData:
+    """
+    Compute neighbor-corrected expression profiles by subtracting the mean expression
+    of k nearest control neighbors for each cell.
+    
+    Parameters:
+        adata: AnnData object containing single-cell data
+        perturbation_key: Observation column identifying perturbation types
+        control_string: String identifier for control cells in perturbation_key column
+        n_neighbors: Number of nearest control neighbors to average
+        n_jobs: Number of parallel jobs for neighbor computation (-1 for all cores)
+        batch_key: Optional batch key for batch-aware processing
+        use_rep: Representation to use for neighbor search after preprocessing
+        n_pcs: Number of principal components to compute
+        chunked_pca: Whether to compute PCA in chunks to reduce memory usage
+        chunk_size: Number of cells per chunk when using chunked PCA
+        
+    Returns:
+        AnnData object with neighbor-corrected expression in 'neighbor_corrected' layer
+    """
+    try:
+        import pynndescent
+    except ImportError:
+        raise ImportError("The PyNNDescent package is required. Install with: pip install pynndescent")
+    
+    # Ensure counts layer exists
+    if 'counts' not in adata.layers:
+        adata.layers['counts'] = adata.X.copy()
+    
+    def process_batch(batch_adata):
+        """Process a single batch of cells"""
+        # Standard preprocessing pipeline (applied in-place)
+        original_X = batch_adata.X.copy()  # Only necessary copy
+        batch_adata.X = batch_adata.layers['counts'].copy()
+        
+        # Preprocess data
+        sc.pp.normalize_total(batch_adata, target_sum=1e6, inplace=True)
+        sc.pp.log1p(batch_adata, copy=False)
+        sc.pp.scale(batch_adata, copy=False)
+        if chunked_pca:
+            sc.pp.pca(batch_adata, n_comps=n_pcs, chunked=True, chunk_size=chunk_size)
+        else:
+            sc.pp.pca(batch_adata, n_comps=n_pcs)
+        
+        # Identify control cells
+        control_mask = batch_adata.obs[perturbation_key].str.contains(control_string).fillna(False)
+        control_indices = np.where(control_mask)[0]
+        
+        if len(control_indices) < n_neighbors:
+            raise ValueError(f"Not enough control cells ({len(control_indices)}) for {n_neighbors} neighbors")
+        
+        # Build efficient nearest neighbor index using PyNNDescent
+        control_pca = batch_adata.obsm[use_rep][control_indices]
+        index = pynndescent.NNDescent(
+            control_pca, 
+            n_neighbors=n_neighbors,
+            metric='euclidean',
+            n_jobs=n_jobs,
+            random_state=42
+        )
+        
+        # Query for nearest neighbors (returns indices and distances)
+        query_pca = batch_adata.obsm[use_rep]
+        indices, _ = index.query(query_pca, k=n_neighbors)
+        
+        # Map indices back to global control cell indices
+        global_indices = np.array([[control_indices[i] for i in nn_indices] for nn_indices in indices])
+        
+        # Allocate space for corrected expression in correct format
+        from scipy import sparse
+        if sparse.issparse(batch_adata.X):
+            corrected_expr = sparse.lil_matrix(batch_adata.X.shape, dtype=batch_adata.X.dtype)
+        else:
+            corrected_expr = np.zeros_like(batch_adata.X)
+        
+        # Process in batches to avoid memory issues
+        process_batch_size = min(1000, batch_adata.n_obs)  # Smaller chunks for processing
+        
+        for i in range(0, batch_adata.n_obs, process_batch_size):
+            end_idx = min(i + process_batch_size, batch_adata.n_obs)
+            
+            # Get raw expression values
+            raw_X = batch_adata.layers['counts'][i:end_idx]
+            if hasattr(raw_X, 'toarray'):
+                raw_X = raw_X.toarray()
+            
+            # Process each cell in the current batch
+            for j in range(end_idx - i):
+                # Get neighbor indices for this cell
+                nn_indices = global_indices[i + j]
+                
+                # Get neighbor expressions (from raw counts layer)
+                nn_expr = batch_adata.layers['counts'][nn_indices]
+                if hasattr(nn_expr, 'toarray'):
+                    nn_expr = nn_expr.toarray()
+                
+                # Compute mean expression of neighbors
+                mean_nn_expr = np.mean(nn_expr, axis=0)
+                
+                # Calculate difference (avoiding temporary arrays)
+                cell_expr = raw_X[j]
+                cell_diff = cell_expr - mean_nn_expr
+                
+                # Store the result
+                if sparse.issparse(corrected_expr):
+                    for k in range(cell_diff.shape[0]):
+                        if cell_diff[k] != 0:
+                            corrected_expr[i + j, k] = cell_diff[k]
+                else:
+                    corrected_expr[i + j] = cell_diff
+        
+        # Store the corrected expression
+        batch_adata.layers['neighbor_corrected'] = corrected_expr
+        
+        # Restore original X
+        batch_adata.X = original_X
+        
+        return batch_adata
+    
+    # Apply batch-aware or global processing
+    if batch_key is not None and batch_key in adata.obs:
+        print(f"Performing batch-aware neighbor correction using '{batch_key}'")
+        
+        # Get unique batches
+        batches = adata.obs[batch_key].unique()
+        
+        # Process each batch separately without full copies
+        for batch_name in batches:
+            print(f"Processing batch: {batch_name}")
+            batch_mask = adata.obs[batch_key] == batch_name
+            batch_indices = np.where(batch_mask)[0]
+            
+            # Create a view for the current batch
+            batch_view = adata[batch_indices]
+            process_batch(batch_view)
+            
+            # If we returned from processing without error, the corrected data
+            # is already stored in the original object's layers
+    else:
+        print("Performing global neighbor correction")
+        process_batch(adata)
+    
+    print("Neighbor-corrected expression computed and stored in 'neighbor_corrected' layer")
+    return adata
 

@@ -8,3 +8,9 @@ KOLF_Perturbation_Atlas_Analysis/input_files/
 Analysis_Scripts/
 psp/aei_utils/subset-bam_linux
 alu_editing/
+Analysis_Scripts/
+KOLF_Perturbation_Atlas_Analysis/
+Mixscale/
+temp/
+psp/notebooks/input_files/Knockdown_Filtered_Cells_Table.csv
+psp/notebooks/input_files/protospacer_calls_per_cell.csv
