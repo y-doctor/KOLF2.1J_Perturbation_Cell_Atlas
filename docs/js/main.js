@@ -7,7 +7,6 @@
   const PANEL  = document.getElementById('panel');
   const PCLOSE = document.getElementById('panel-close');
 
-  // Panel refs
   const P = {
     gene:   document.getElementById('p-gene'),
     leiden: document.getElementById('p-leiden'),
@@ -17,29 +16,22 @@
     up:     document.getElementById('p-up').querySelector('tbody'),
     dn:     document.getElementById('p-dn').querySelector('tbody'),
     nbr:    document.getElementById('p-nbr'),
-    corumS: document.getElementById('p-corum-section'),
-    corum:  document.getElementById('p-corum'),
-    corumH: document.getElementById('p-corum-hl'),
   };
 
   // State
-  let data = [];                    // points
+  let data = [];
   let leidenLabels = {};
   let hdbscanLabels = {};
-  let indexByGene = new Map();      // gene -> index into data
-  let mode = 'l';                   // 'l' | 'h' | 'n' | 'e'
+  let indexByGene = new Map();
+  let nDegsRank = new Map();   // gene -> rank by n_DEGs desc
+  let edistRank = new Map();   // gene -> rank by edist desc
+  let totalRanked = 0;
+  let mode = 'l';              // 'l' | 'h'
   let xRange = null, yRange = null;
   let selectedIdx = null;
-  let corumHighlightOn = false;
-  let currentCorumPartners = [];
-
-  // Lazy caches
-  let degsCache = null;             // loaded on first click
-  let corumCache = null;            // loaded on first click
+  let degsCache = null;
 
   const GRAY = '#c7c7c7';
-  const HL   = '#d62728';           // highlight color for CORUM overlay
-
   function clusterColor(v) {
     if (v === -1) return GRAY;
     const golden = 0.61803398875;
@@ -54,71 +46,29 @@
     return labels[cid] || `cluster ${cid}`;
   }
 
-  function hoverFor(p, m) {
-    if (m === 'l' || m === 'h') {
-      const lab = clusterLabelFor(p, m);
-      return `<b>${p.g}</b><br>${lab}`;
-    }
-    return `<b>${p.g}</b>`;
-  }
-
   function buildTrace(records, m) {
     const x = new Array(records.length);
     const y = new Array(records.length);
     const text = new Array(records.length);
     const hovertext = new Array(records.length);
+    const color = new Array(records.length);
 
     for (let i = 0; i < records.length; i++) {
       const r = records[i];
       x[i] = r.x;
       y[i] = r.y;
       text[i] = r.g;
-      hovertext[i] = hoverFor(r, m);
+      hovertext[i] = `<b>${r.g}</b><br>${clusterLabelFor(r, m)}`;
+      color[i] = clusterColor(r[m]);
     }
 
-    const trace = {
+    return {
       type: 'scattergl',
       mode: 'markers',
       x, y, text, hovertext,
       hovertemplate: '%{hovertext}<extra></extra>',
-      unselected: { marker: { opacity: 0.12 } },
-      selected:   { marker: { opacity: 1.0 } },
+      marker: { color, size: 6, opacity: 0.85, line: { width: 0 } },
     };
-
-    if (m === 'l' || m === 'h') {
-      const color = records.map(r => clusterColor(r[m]));
-      trace.marker = { color, size: 6, opacity: 0.85, line: { width: 0 } };
-    } else {
-      // continuous: n_DEGs or edist, log1p-transformed, viridis
-      const raw = records.map(r => m === 'n' ? r.n : r.e);
-      const vals = raw.map(v => (v == null || v < 0) ? null : Math.log1p(v));
-      const valid = vals.filter(v => v != null);
-      const cmin = Math.min.apply(null, valid);
-      const cmax = Math.max.apply(null, valid);
-      trace.marker = {
-        color: vals.map(v => v == null ? cmin : v),
-        colorscale: 'Viridis',
-        cmin, cmax,
-        size: 6,
-        opacity: 0.85,
-        line: { width: 0 },
-        showscale: true,
-        colorbar: {
-          thickness: 8,
-          len: 0.4,
-          x: 1.0, xanchor: 'right',
-          y: 0.08, yanchor: 'bottom',
-          outlinewidth: 0,
-          tickfont: { size: 10, color: '#666' },
-          title: {
-            text: m === 'n' ? 'log(1+n_DEGs)' : 'log(1+edist)',
-            font: { size: 10, color: '#666' },
-            side: 'right',
-          },
-        },
-      };
-    }
-    return trace;
   }
 
   const layout = {
@@ -152,56 +102,40 @@
   }
 
   function render() {
-    const trace = buildTrace(data, mode);
-    layout.xaxis.range = xRange;
-    layout.yaxis.range = yRange;
-    Plotly.react(PLOT, [trace], layout, config);
-    // After react, re-apply any active selection
-    if (corumHighlightOn && currentCorumPartners.length) {
-      applyCorumHighlight();
-    } else if (selectedIdx != null) {
-      Plotly.restyle(PLOT, { selectedpoints: [[selectedIdx]] });
-    }
+    Plotly.react(PLOT, [buildTrace(data, mode)], {
+      ...layout,
+      xaxis: { ...layout.xaxis, range: xRange },
+      yaxis: { ...layout.yaxis, range: yRange },
+    }, config);
   }
 
-  function clearSelection() {
-    selectedIdx = null;
-    corumHighlightOn = false;
-    currentCorumPartners = [];
-    P.corumH.classList.remove('on');
-    Plotly.restyle(PLOT, { selectedpoints: [null] });
-    Plotly.relayout(PLOT, { annotations: [] });
+  function computeRanks() {
+    const byN = [...data]
+      .filter(r => r.n >= 0)
+      .sort((a, b) => b.n - a.n);
+    byN.forEach((r, i) => nDegsRank.set(r.g, i + 1));
+
+    const byE = [...data]
+      .filter(r => r.e != null)
+      .sort((a, b) => b.e - a.e);
+    byE.forEach((r, i) => edistRank.set(r.g, i + 1));
+
+    // Both metrics cover the same 1655 perts in our payload; use that as denom.
+    totalRanked = Math.max(byN.length, byE.length);
   }
 
-  function searchHighlight(query) {
-    const q = query.trim().toUpperCase();
-    if (!q) {
-      EMPTY.hidden = true;
-      if (!PANEL.classList.contains('open')) clearSelection();
-      return;
-    }
-    let idx = data.findIndex(r => r.g.toUpperCase() === q);
-    if (idx < 0) idx = data.findIndex(r => r.g.toUpperCase().startsWith(q));
-    if (idx < 0) idx = data.findIndex(r => r.g.toUpperCase().includes(q));
-    if (idx < 0) {
-      EMPTY.hidden = false;
-      Plotly.restyle(PLOT, { selectedpoints: [null] });
-      return;
-    }
-    EMPTY.hidden = true;
-    focusGene(idx, { zoom: true });
+  function annotateSelected(r) {
+    return [{
+      x: r.x, y: r.y, text: r.g, showarrow: true, arrowhead: 0,
+      ax: 0, ay: -28, font: { size: 13, color: '#111' },
+      bgcolor: 'rgba(255,255,255,0.9)', bordercolor: '#111', borderwidth: 1, borderpad: 3,
+    }];
   }
 
   function focusGene(idx, { zoom = false } = {}) {
     const r = data[idx];
     selectedIdx = idx;
-    Plotly.restyle(PLOT, { selectedpoints: [[idx]] });
-    const ann = [{
-      x: r.x, y: r.y, text: r.g, showarrow: true, arrowhead: 0,
-      ax: 0, ay: -28, font: { size: 13, color: '#111' },
-      bgcolor: 'rgba(255,255,255,0.9)', bordercolor: '#111', borderwidth: 1, borderpad: 3,
-    }];
-    const relayout = { annotations: ann };
+    const relayout = { annotations: annotateSelected(r) };
     if (zoom) {
       const pad = Math.max((xRange[1] - xRange[0]), (yRange[1] - yRange[0])) * 0.06;
       relayout['xaxis.range'] = [r.x - pad, r.x + pad];
@@ -211,11 +145,25 @@
     openPanel(idx);
   }
 
+  function searchHighlight(query) {
+    const q = query.trim().toUpperCase();
+    if (!q) {
+      EMPTY.hidden = true;
+      return;
+    }
+    let idx = data.findIndex(r => r.g.toUpperCase() === q);
+    if (idx < 0) idx = data.findIndex(r => r.g.toUpperCase().startsWith(q));
+    if (idx < 0) idx = data.findIndex(r => r.g.toUpperCase().includes(q));
+    if (idx < 0) { EMPTY.hidden = false; return; }
+    EMPTY.hidden = true;
+    focusGene(idx, { zoom: true });
+  }
+
   function resetView() {
     SEARCH.value = '';
     EMPTY.hidden = true;
+    selectedIdx = null;
     closePanel();
-    clearSelection();
     Plotly.relayout(PLOT, {
       'xaxis.range': xRange,
       'yaxis.range': yRange,
@@ -223,9 +171,13 @@
     });
   }
 
-  // --- Side panel ---
-  function fmtInt(v)   { return v == null || v < 0 ? '—' : v.toLocaleString(); }
+  // --- Panel ---
+  function fmtInt(v) { return v == null || v < 0 ? '—' : v.toLocaleString(); }
   function fmtFloat(v, d = 2) { return v == null ? '—' : Number(v).toFixed(d); }
+  function fmtRank(rank, total) { return rank ? `rank ${rank} / ${total}` : '—'; }
+  function fmtWithRank(valStr, rank, total) {
+    return rank ? `${valStr} · ${fmtRank(rank, total)}` : valStr;
+  }
 
   function renderDegsTable(tbody, rows) {
     tbody.innerHTML = '';
@@ -238,7 +190,8 @@
     for (const r of rows) {
       const tr = document.createElement('tr');
       const g = document.createElement('td'); g.textContent = r.g;
-      const l = document.createElement('td'); l.textContent = (r.lfc >= 0 ? '+' : '') + r.lfc.toFixed(2);
+      const l = document.createElement('td');
+      l.textContent = (r.lfc >= 0 ? '+' : '') + r.lfc.toFixed(2);
       tr.appendChild(g); tr.appendChild(l);
       tbody.appendChild(tr);
     }
@@ -270,42 +223,11 @@
     }
   }
 
-  function renderCorumSection(gene) {
-    const partners = (corumCache && corumCache[gene]) || [];
-    currentCorumPartners = partners.filter(p => indexByGene.has(p));
-    if (currentCorumPartners.length === 0) {
-      P.corumS.hidden = true;
-      return;
-    }
-    P.corumS.hidden = false;
-    P.corum.innerHTML = '';
-    for (const p of currentCorumPartners) {
-      const li = document.createElement('li');
-      const g = document.createElement('span'); g.className = 'g'; g.textContent = p;
-      g.addEventListener('click', () => focusGene(indexByGene.get(p), { zoom: true }));
-      li.appendChild(g);
-      P.corum.appendChild(li);
-    }
-    P.corumH.classList.toggle('on', corumHighlightOn);
-  }
-
-  function applyCorumHighlight() {
-    const idxs = currentCorumPartners.map(p => indexByGene.get(p)).filter(i => i != null);
-    if (selectedIdx != null) idxs.push(selectedIdx);
-    Plotly.restyle(PLOT, { selectedpoints: [idxs] });
-  }
-
   async function ensureDegs() {
     if (degsCache) return degsCache;
     const r = await fetch('data/degs.json');
     degsCache = await r.json();
     return degsCache;
-  }
-  async function ensureCorum() {
-    if (corumCache) return corumCache;
-    const r = await fetch('data/corum.json');
-    corumCache = await r.json();
-    return corumCache;
   }
 
   async function openPanel(idx) {
@@ -313,24 +235,21 @@
     P.gene.textContent   = r.g;
     P.leiden.textContent = clusterLabelFor(r, 'l');
     P.hdb.textContent    = clusterLabelFor(r, 'h');
-    P.ndegs.textContent  = fmtInt(r.n);
-    P.edist.textContent  = fmtFloat(r.e, 2);
+    P.ndegs.textContent  = fmtWithRank(fmtInt(r.n), nDegsRank.get(r.g), totalRanked);
+    P.edist.textContent  = fmtWithRank(fmtFloat(r.e, 2), edistRank.get(r.g), totalRanked);
 
-    // Neighbors synchronously (cheap)
     renderNeighbors(P.nbr, nearestNeighbors(idx, 10));
 
     PANEL.classList.add('open');
     PANEL.setAttribute('aria-hidden', 'false');
 
-    // Lazy data: DEGs + CORUM
     try {
-      const [degs, corum] = await Promise.all([ensureDegs(), ensureCorum()]);
+      const degs = await ensureDegs();
       const d = degs[r.g];
       renderDegsTable(P.up, d ? d.up : null);
       renderDegsTable(P.dn, d ? d.dn : null);
-      renderCorumSection(r.g);
     } catch (e) {
-      console.error('panel data load failed', e);
+      console.error('degs load failed', e);
     }
   }
 
@@ -339,13 +258,13 @@
     PANEL.setAttribute('aria-hidden', 'true');
   }
 
-  // --- Event wiring ---
+  // --- Events ---
   SEARCH.addEventListener('input', e => searchHighlight(e.target.value));
   SEARCH.addEventListener('keydown', e => {
     if (e.key === 'Escape') { SEARCH.value = ''; resetView(); }
   });
   RESET.addEventListener('click', resetView);
-  PCLOSE.addEventListener('click', () => { closePanel(); clearSelection(); });
+  PCLOSE.addEventListener('click', closePanel);
 
   SEGS.forEach(btn => btn.addEventListener('click', () => {
     if (btn.classList.contains('active')) return;
@@ -356,18 +275,6 @@
     render();
   }));
 
-  P.corumH.addEventListener('click', () => {
-    if (currentCorumPartners.length === 0) return;
-    corumHighlightOn = !corumHighlightOn;
-    P.corumH.classList.toggle('on', corumHighlightOn);
-    if (corumHighlightOn) {
-      applyCorumHighlight();
-    } else if (selectedIdx != null) {
-      Plotly.restyle(PLOT, { selectedpoints: [[selectedIdx]] });
-    }
-  });
-
-  // Plot click → open side panel
   function attachPlotEvents() {
     PLOT.on('plotly_click', ev => {
       const pt = ev.points && ev.points[0];
@@ -384,6 +291,7 @@
       leidenLabels  = payload.leiden_labels  || {};
       hdbscanLabels = payload.hdbscan_labels || {};
       indexByGene = new Map(data.map((r, i) => [r.g, i]));
+      computeRanks();
       initialAutorange();
       render();
       attachPlotEvents();

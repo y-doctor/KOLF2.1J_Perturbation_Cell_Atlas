@@ -15,11 +15,9 @@
     </div>
     <div class="controls">
       <input id="search" type="search" placeholder="Search gene…" autocomplete="off" spellcheck="false">
-      <div class="toggle" role="radiogroup" aria-label="Color overlay">
-        <button class="seg active" data-mode="l"      role="radio" aria-checked="true">Leiden</button>
-        <button class="seg"        data-mode="h"      role="radio" aria-checked="false">HDBSCAN</button>
-        <button class="seg"        data-mode="n"      role="radio" aria-checked="false">n DEGs</button>
-        <button class="seg"        data-mode="e"      role="radio" aria-checked="false">edist</button>
+      <div class="toggle" role="radiogroup" aria-label="Cluster coloring">
+        <button class="seg active" data-mode="l" role="radio" aria-checked="true">Leiden</button>
+        <button class="seg"        data-mode="h" role="radio" aria-checked="false">HDBSCAN</button>
       </div>
       <button id="reset" title="Reset view">Reset</button>
     </div>
@@ -51,11 +49,6 @@
         <section>
           <h3>Nearest neighbors (MDE)</h3>
           <ol class="neighbors" id="p-nbr"></ol>
-        </section>
-
-        <section id="p-corum-section" hidden>
-          <h3>CORUM partners <button id="p-corum-hl" class="mini">highlight on plot</button></h3>
-          <ol class="neighbors" id="p-corum"></ol>
         </section>
       </div>
     </aside>
