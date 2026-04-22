@@ -11,13 +11,15 @@
   <header>
     <div class="title">
       <h1>KOLF2.1J Perturbation Atlas</h1>
-      <p>MDE of 1,656 strong perturbations</p>
+      <p>MDE of 1,655 strong perturbations</p>
     </div>
     <div class="controls">
       <input id="search" type="search" placeholder="Search gene…" autocomplete="off" spellcheck="false">
-      <div class="toggle" role="radiogroup" aria-label="Cluster coloring">
-        <button class="seg active" data-col="l" role="radio" aria-checked="true">Leiden</button>
-        <button class="seg"        data-col="h" role="radio" aria-checked="false">HDBSCAN</button>
+      <div class="toggle" role="radiogroup" aria-label="Color overlay">
+        <button class="seg active" data-mode="l"      role="radio" aria-checked="true">Leiden</button>
+        <button class="seg"        data-mode="h"      role="radio" aria-checked="false">HDBSCAN</button>
+        <button class="seg"        data-mode="n"      role="radio" aria-checked="false">n DEGs</button>
+        <button class="seg"        data-mode="e"      role="radio" aria-checked="false">edist</button>
       </div>
       <button id="reset" title="Reset view">Reset</button>
     </div>
@@ -25,9 +27,41 @@
   <main>
     <div id="plot"></div>
     <div id="empty" class="hint" hidden>No match.</div>
+    <aside id="panel" class="panel" aria-hidden="true">
+      <button id="panel-close" class="panel-close" aria-label="Close">&times;</button>
+      <div class="panel-body">
+        <h2 id="p-gene">—</h2>
+        <dl class="kv">
+          <dt>Leiden</dt>       <dd id="p-leiden">—</dd>
+          <dt>HDBSCAN</dt>      <dd id="p-hdb">—</dd>
+          <dt>n DEGs</dt>       <dd id="p-ndegs">—</dd>
+          <dt>edist (vs NTC)</dt><dd id="p-edist">—</dd>
+        </dl>
+
+        <section>
+          <h3>Top up-regulated DEGs</h3>
+          <table class="degs" id="p-up"><tbody></tbody></table>
+        </section>
+
+        <section>
+          <h3>Top down-regulated DEGs</h3>
+          <table class="degs" id="p-dn"><tbody></tbody></table>
+        </section>
+
+        <section>
+          <h3>Nearest neighbors (MDE)</h3>
+          <ol class="neighbors" id="p-nbr"></ol>
+        </section>
+
+        <section id="p-corum-section" hidden>
+          <h3>CORUM partners <button id="p-corum-hl" class="mini">highlight on plot</button></h3>
+          <ol class="neighbors" id="p-corum"></ol>
+        </section>
+      </div>
+    </aside>
   </main>
   <footer>
-    <span>n = 1,656 · <a href="https://doi.org/10.1101/2024.11.03.621734" target="_blank" rel="noopener">Doctor et&nbsp;al., bioRxiv 2024</a> · <a href="https://github.com/y-doctor/KOLF2.1J_Perturbation_Cell_Atlas" target="_blank" rel="noopener">source</a></span>
+    <span>n = 1,655 · <a href="https://doi.org/10.1101/2024.11.03.621734" target="_blank" rel="noopener">Doctor et&nbsp;al., bioRxiv 2024</a> · <a href="https://github.com/y-doctor/KOLF2.1J_Perturbation_Cell_Atlas" target="_blank" rel="noopener">source</a></span>
   </footer>
   <script src="js/main.js"></script>
 </body>
