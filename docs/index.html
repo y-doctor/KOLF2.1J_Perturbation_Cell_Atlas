@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>KOLF2.1J Perturbation Atlas — MDE</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://cdn.plot.ly/plotly-basic-2.35.2.min.js" charset="utf-8"></script>
+</head>
+<body>
+  <header>
+    <div class="title">
+      <h1>KOLF2.1J Perturbation Atlas</h1>
+      <p>MDE of 1,655 strong perturbations</p>
+    </div>
+    <div class="controls">
+      <input id="search" type="search" placeholder="Search gene…" autocomplete="off" spellcheck="false">
+      <div class="toggle" role="radiogroup" aria-label="Cluster coloring">
+        <button class="seg active" data-col="l" role="radio" aria-checked="true">Leiden</button>
+        <button class="seg"        data-col="h" role="radio" aria-checked="false">HDBSCAN</button>
+      </div>
+      <button id="reset" title="Reset view">Reset</button>
+    </div>
+  </header>
+  <main>
+    <div id="plot"></div>
+    <div id="empty" class="hint" hidden>No match.</div>
+  </main>
+  <footer>
+    <span>n = 1,655 · <a href="https://doi.org/10.1101/2024.11.03.621734" target="_blank" rel="noopener">Doctor et&nbsp;al., bioRxiv 2024</a> · <a href="https://github.com/y-doctor/KOLF2.1J_Perturbation_Cell_Atlas" target="_blank" rel="noopener">source</a></span>
+  </footer>
+  <script src="js/main.js"></script>
+</body>
+</html>

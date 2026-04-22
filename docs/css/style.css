@@ -1,0 +1,139 @@
+:root {
+  --fg: #111;
+  --muted: #666;
+  --line: #e5e5e5;
+  --bg: #fff;
+  --accent: #111;
+  --accent-fg: #fff;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0; padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--line);
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.title h1 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.title p {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#search {
+  width: 220px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  outline: none;
+}
+#search:focus { border-color: var(--fg); }
+
+.toggle {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.seg {
+  background: transparent;
+  border: 0;
+  padding: 7px 12px;
+  font: inherit;
+  color: var(--muted);
+  cursor: pointer;
+}
+.seg.active {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+.seg + .seg { border-left: 1px solid var(--line); }
+
+#reset {
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 7px 12px;
+  font: inherit;
+  color: var(--fg);
+  cursor: pointer;
+}
+#reset:hover { border-color: var(--fg); }
+
+main {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+#plot {
+  position: absolute;
+  inset: 0;
+}
+
+.hint {
+  position: absolute;
+  top: 16px; left: 50%;
+  transform: translateX(-50%);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 10px;
+  color: var(--muted);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+footer {
+  padding: 10px 24px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+}
+footer a {
+  color: var(--muted);
+  text-decoration: underline;
+  text-decoration-color: var(--line);
+  text-underline-offset: 2px;
+}
+footer a:hover { color: var(--fg); }
+
+@media (max-width: 600px) {
+  header { padding: 10px 14px; }
+  .controls { flex-wrap: wrap; }
+  #search { width: 100%; }
+}
