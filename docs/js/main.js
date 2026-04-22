@@ -5,8 +5,10 @@
   const RESET = document.getElementById('reset');
   const SEGS = document.querySelectorAll('.seg');
 
-  let data = [];           // raw records
-  let colorCol = 'l';      // 'l' | 'h'
+  let data = [];                    // point records
+  let leidenLabels = {};            // { clusterId -> annotation string }
+  let hdbscanLabels = {};
+  let colorCol = 'l';               // 'l' | 'h'
   let xRange = null;
   let yRange = null;
 
@@ -26,14 +28,20 @@
     const hovertext = new Array(records.length);
     const color = new Array(records.length);
 
+    const labels = col === 'l' ? leidenLabels : hdbscanLabels;
     for (let i = 0; i < records.length; i++) {
       const r = records[i];
       x[i] = r.x;
       y[i] = r.y;
       text[i] = r.g;
       const n = r.n >= 0 ? r.n : '—';
-      hovertext[i] = `<b>${r.g}</b><br>cluster: ${r[col]}<br>DEGs: ${n}`;
-      color[i] = clusterColor(r[col]);
+      const cid = r[col];
+      const cname = (cid === -1) ? 'unclustered' : (labels[cid] || '');
+      const clusterLine = cname
+        ? `cluster ${cid}: ${cname}`
+        : `cluster ${cid}`;
+      hovertext[i] = `<b>${r.g}</b><br>${clusterLine}<br>DEGs: ${n}`;
+      color[i] = clusterColor(cid);
     }
 
     return {
@@ -152,8 +160,10 @@
   // Load data
   fetch('data/mde.json')
     .then(r => r.json())
-    .then(records => {
-      data = records;
+    .then(payload => {
+      data = payload.points;
+      leidenLabels = payload.leiden_labels || {};
+      hdbscanLabels = payload.hdbscan_labels || {};
       initialAutorange();
       render();
     })
