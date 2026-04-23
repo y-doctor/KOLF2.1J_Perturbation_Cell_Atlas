@@ -1,11 +1,12 @@
 /* KOLF2.1J Perturbation Atlas viewer
-   Three tabs: MDE (#mde), Clustermap (#clustermap), Clusters (#clusters).
+   Tabs: MDE (#mde), Pert clustermap (#clustermap),
+         Gene clustermap (#genemap), Clusters (#clusters).
 */
 
 // ============================================================================
 // Router
 // ============================================================================
-const TABS = ['mde', 'clustermap', 'clusters'];
+const TABS = ['mde', 'clustermap', 'genemap', 'clusters'];
 const tabButtons = document.querySelectorAll('.tab');
 const views      = Object.fromEntries(
   TABS.map(name => [name, document.getElementById(`view-${name}`)])
@@ -28,6 +29,7 @@ function showTab(name) {
   }
   if (name === 'mde')        MDE.onShow();
   if (name === 'clustermap') Clustermap.onShow();
+  if (name === 'genemap')    GeneClustermap.onShow();
   if (name === 'clusters')   Clusters.onShow();
 }
 
@@ -281,7 +283,7 @@ const MDE = (() => {
   }
 
   function init() {
-    return fetch('data/mde.json?v=12').then(r => r.json()).then(payload => {
+    return fetch('data/mde.json?v=13').then(r => r.json()).then(payload => {
       data = payload.points;
       leidenLabels  = payload.leiden_labels  || {};
       hdbscanLabels = payload.hdbscan_labels || {};
@@ -306,22 +308,22 @@ const MDE = (() => {
 })();
 
 // ============================================================================
-// Clustermap tab — pert × pert Pearson on z-normed pseudobulks.
-//   Main pane: hierarchically clustered 1655 x 1655 + HDBSCAN color strip.
-//   Side pane: 314 perts with HDBSCAN != -1, sorted by cluster id, with
-//              cluster-boundary separator lines + HDBSCAN color strip.
+// Clustermap factory — produces a tab module that loads two int8 binary
+// correlation matrices (main + hdbscan-filtered side), renders them as
+// Plotly heatmaps with HDBSCAN color strips, and supports search + zoom.
+// Used twice: once for pert x pert and once for gene x gene.
 // ============================================================================
-const Clustermap = (() => {
-  const MAIN   = document.getElementById('cmap-main');
-  const SIDE   = document.getElementById('cmap-side');
-  const SEARCH = document.getElementById('csearch');
-  const SUG    = document.getElementById('csuggest');
-  const HINT   = document.getElementById('chint');
-  const META   = document.getElementById('cmeta');
-  const RESET  = document.getElementById('creset');
+function makeClustermap(opts) {
+  const MAIN   = document.getElementById(opts.mainId);
+  const SIDE   = document.getElementById(opts.sideId);
+  const SEARCH = document.getElementById(opts.searchId);
+  const SUG    = document.getElementById(opts.suggestId);
+  const HINT   = document.getElementById(opts.hintId);
+  const META   = document.getElementById(opts.metaId);
+  const RESET  = document.getElementById(opts.resetId);
 
   let meta = null;                  // full metadata
-  let perts = [];                   // main matrix order
+  let perts = [];                   // main matrix order (genes or perts)
   let M = null;                     // Float32Array length n*n
   let n = 0;
   let indexByGene = new Map();
@@ -362,38 +364,36 @@ const Clustermap = (() => {
 
   function init() {
     HINT.hidden = false;
-    HINT.textContent = 'Loading correlation matrices (~2.8 MB)…';
+    HINT.textContent = `Loading ${opts.label} matrices…`;
     return Promise.all([
-      fetch('data/clustermap/meta.json?v=12').then(r => r.json()),
-      fetch('data/clustermap/corr_int8.bin?v=12').then(r => r.arrayBuffer()),
-      fetch('data/clustermap/corr_side_int8.bin?v=12').then(r => r.arrayBuffer()),
+      fetch(opts.metaPath).then(r => r.json()),
+      fetch(opts.mainPath).then(r => r.arrayBuffer()),
+      fetch(opts.sidePath).then(r => r.arrayBuffer()),
     ]).then(([m, mainBuf, sideBuf]) => {
       meta  = m;
       perts = m.perts;
       n     = m.n;
       const scale = m.scale || 127;
 
-      // Main matrix
       const mi8 = new Int8Array(mainBuf);
       if (mi8.length !== n * n) throw new Error(`main bin length ${mi8.length} != ${n*n}`);
       M = new Float32Array(n * n);
       for (let i = 0; i < mi8.length; i++) M[i] = mi8[i] / scale;
       indexByGene = new Map(perts.map((g, i) => [g, i]));
 
-      // Side matrix
       const ns = m.side.n;
       const si8 = new Int8Array(sideBuf);
       if (si8.length !== ns * ns) throw new Error(`side bin length ${si8.length} != ${ns*ns}`);
       const Ms = new Float32Array(ns * ns);
       for (let i = 0; i < si8.length; i++) Ms[i] = si8[i] / scale;
 
-      META.textContent = `${n} perts (left)  ·  ${ns} HDBSCAN-clustered (right)  ·  Pearson r`;
+      META.textContent = `${n} ${opts.unit} (left) · ${ns} HDBSCAN-clustered (right) · Pearson r`;
       attachEvents();
       renderMain(M);
       renderSide(Ms, ns);
       HINT.hidden = true;
     }).catch(err => {
-      HINT.textContent = `Failed to load clustermap: ${err.message || err}`;
+      HINT.textContent = `Failed to load ${opts.label}: ${err.message || err}`;
     });
   }
 
@@ -426,7 +426,7 @@ const Clustermap = (() => {
       z, x: perts, y: perts,
       xaxis: 'x2', yaxis: 'y',
       colorscale: 'RdBu', reversescale: true,    // inverted: red=high, blue=low
-      zmin: -0.2, zmax: 0.2,                      // tighter dynamic range for main
+      zmin: opts.mainZmin, zmax: opts.mainZmax,
       hovertemplate: '<b>%{y}</b> × <b>%{x}</b><br>r = %{z:.3f}<extra></extra>',
       colorbar: {
         title: { text: 'Pearson r', font: { size: 10 } },
@@ -472,7 +472,7 @@ const Clustermap = (() => {
       z, x: sideMeta.perts, y: sideMeta.perts,
       xaxis: 'x2', yaxis: 'y',
       colorscale: 'RdBu', reversescale: true,    // inverted: red=high, blue=low
-      zmin: -0.5, zmax: 0.5,                      // wider range for the cluster blocks
+      zmin: opts.sideZmin, zmax: opts.sideZmax,
       hovertemplate: '<b>%{y}</b> × <b>%{x}</b><br>r = %{z:.3f}<extra></extra>',
       colorbar: {
         title: { text: 'Pearson r', font: { size: 10 } },
@@ -603,7 +603,33 @@ const Clustermap = (() => {
   }
 
   return { init, onShow };
-})();
+}
+
+const Clustermap = makeClustermap({
+  label:    'pert clustermap',
+  unit:     'perts',
+  mainId:   'cmap-main', sideId:   'cmap-side',
+  searchId: 'csearch',   suggestId:'csuggest',
+  hintId:   'chint',     metaId:   'cmeta',     resetId: 'creset',
+  metaPath: 'data/clustermap/meta.json?v=13',
+  mainPath: 'data/clustermap/corr_int8.bin?v=13',
+  sidePath: 'data/clustermap/corr_side_int8.bin?v=13',
+  mainZmin: -0.2, mainZmax: 0.2,
+  sideZmin: -0.5, sideZmax: 0.5,
+});
+
+const GeneClustermap = makeClustermap({
+  label:    'gene clustermap',
+  unit:     'genes',
+  mainId:   'gmap-main', sideId:   'gmap-side',
+  searchId: 'gsearch',   suggestId:'gsuggest',
+  hintId:   'ghint',     metaId:   'gmeta',     resetId: 'greset',
+  metaPath: 'data/genemap/meta.json?v=13',
+  mainPath: 'data/genemap/gene_corr_int8.bin?v=13',
+  sidePath: 'data/genemap/gene_corr_side_int8.bin?v=13',
+  mainZmin: -0.2, mainZmax: 0.2,
+  sideZmin: -0.5, sideZmax: 0.5,
+});
 
 // ============================================================================
 // Clusters tab (placeholder until z-score matrix lands)
@@ -619,6 +645,7 @@ const Clusters = (() => {
 // ============================================================================
 MDE.init();
 Clustermap.init();
+GeneClustermap.init();
 Clusters.init();
 
 // Initial route

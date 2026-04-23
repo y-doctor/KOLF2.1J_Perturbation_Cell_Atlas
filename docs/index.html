@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>KOLF2.1J Perturbation Atlas</title>
-  <link rel="stylesheet" href="css/style.css?v=12">
+  <link rel="stylesheet" href="css/style.css?v=13">
   <script src="https://cdn.plot.ly/plotly-cartesian-2.35.2.min.js" charset="utf-8"></script>
 </head>
 <body>
@@ -15,7 +15,8 @@
     </div>
     <nav class="tabs" role="tablist" aria-label="Views">
       <button class="tab active" role="tab" aria-selected="true"  data-tab="mde">MDE</button>
-      <button class="tab"        role="tab" aria-selected="false" data-tab="clustermap">Clustermap</button>
+      <button class="tab"        role="tab" aria-selected="false" data-tab="clustermap">Pert clustermap</button>
+      <button class="tab"        role="tab" aria-selected="false" data-tab="genemap">Gene clustermap</button>
       <button class="tab"        role="tab" aria-selected="false" data-tab="clusters">Clusters</button>
     </nav>
   </header>
@@ -75,6 +76,29 @@
       </div>
     </section>
 
+    <!-- Gene clustermap view -->
+    <section id="view-genemap" class="view" role="tabpanel" hidden>
+      <div class="view-controls">
+        <div class="combo">
+          <input id="gsearch" type="search" placeholder="Search gene…" autocomplete="off" spellcheck="false">
+          <ul id="gsuggest" class="suggest" hidden></ul>
+        </div>
+        <span id="gmeta" class="meta"></span>
+        <button id="greset" title="Reset zoom">Reset</button>
+      </div>
+      <div class="view-body cmap-body">
+        <div class="cmap-pane">
+          <div class="cmap-title">All 2,189 feature genes · hierarchical clustering</div>
+          <div id="gmap-main" class="cmap-plot"></div>
+        </div>
+        <div class="cmap-pane cmap-pane-narrow">
+          <div class="cmap-title">HDBSCAN gene clusters only · 1,140 genes · sorted by cluster id</div>
+          <div id="gmap-side" class="cmap-plot"></div>
+        </div>
+        <div id="ghint" class="hint">Loading correlation matrix…</div>
+      </div>
+    </section>
+
     <!-- Clusters view -->
     <section id="view-clusters" class="view" role="tabpanel" aria-labelledby="tab-clusters" hidden>
       <div class="view-controls">
@@ -96,6 +120,6 @@
     <span><a href="https://doi.org/10.1101/2024.11.03.621734" target="_blank" rel="noopener">Doctor et&nbsp;al., bioRxiv 2024</a> · <a href="https://github.com/y-doctor/KOLF2.1J_Perturbation_Cell_Atlas" target="_blank" rel="noopener">source</a></span>
   </footer>
 
-  <script src="js/main.js?v=12"></script>
+  <script src="js/main.js?v=13"></script>
 </body>
 </html>
