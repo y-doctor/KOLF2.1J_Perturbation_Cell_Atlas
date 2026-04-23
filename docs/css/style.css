@@ -415,6 +415,17 @@ button.mini.on    { background: var(--accent); color: var(--accent-fg); border-c
   .cl-list { width: 100%; max-height: 40vh; border-right: 0; border-bottom: 1px solid var(--line); }
 }
 
+/* Gene panel layout */
+.pn-body { display: block; padding: 14px 24px 24px; overflow: auto; }
+.pn-body .chip-row { margin-bottom: 14px; }
+.pn-body .chip { padding-right: 4px; }
+.pn-body .chip .x {
+  display: inline-block; margin-left: 6px; padding: 0 4px;
+  color: var(--muted); cursor: pointer;
+}
+.pn-body .chip:hover .x { color: #d62728; }
+.pn-plot { width: 100%; min-height: 260px; }
+
 footer {
   padding: 10px 24px;
   border-top: 1px solid var(--line);

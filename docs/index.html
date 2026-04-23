@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>KOLF2.1J Perturbation Atlas</title>
-  <link rel="stylesheet" href="css/style.css?v=22">
+  <link rel="stylesheet" href="css/style.css?v=23">
   <script src="https://cdn.plot.ly/plotly-cartesian-2.35.2.min.js" charset="utf-8"></script>
 </head>
 <body>
@@ -19,6 +19,7 @@
       <button class="tab"        role="tab" aria-selected="false" data-tab="genemap">Gene clustermap</button>
       <button class="tab"        role="tab" aria-selected="false" data-tab="genequery">Gene query</button>
       <button class="tab"        role="tab" aria-selected="false" data-tab="clusters">Clusters</button>
+      <button class="tab"        role="tab" aria-selected="false" data-tab="panel">Gene panel</button>
     </nav>
   </header>
 
@@ -160,18 +161,18 @@
         <aside id="clist" class="cl-list"></aside>
         <div class="cl-main">
           <div id="cl-hint" class="placeholder">
-            <p>Pick a cluster on the left to see its averaged top 30 up/down genes (mean NTC z-score across strong-perturbation members) and the member perts.</p>
+            <p>Pick a cluster on the left to see its averaged top 50 up/down genes (mean NTC z-score across strong-perturbation members) and the member perts.</p>
           </div>
           <div id="cresults" hidden>
             <h2 id="c-title">—</h2>
             <p id="c-sub" class="meta"></p>
             <div class="gq-cols">
               <section>
-                <h3>Top 30 genes · highest avg z</h3>
+                <h3>Top 50 genes · highest avg z</h3>
                 <table class="degs"><tbody id="c-up"></tbody></table>
               </section>
               <section>
-                <h3>Top 30 genes · lowest avg z</h3>
+                <h3>Top 50 genes · lowest avg z</h3>
                 <table class="degs"><tbody id="c-dn"></tbody></table>
               </section>
             </div>
@@ -183,12 +184,36 @@
         </div>
       </div>
     </section>
+
+    <!-- Gene panel view -->
+    <section id="view-panel" class="view" role="tabpanel" aria-labelledby="tab-panel" hidden>
+      <div class="view-controls">
+        <div class="toggle" role="radiogroup" aria-label="Cluster type">
+          <button class="seg active" data-ptype="leiden"  role="radio" aria-checked="true">Leiden</button>
+          <button class="seg"        data-ptype="hdbscan" role="radio" aria-checked="false">HDBSCAN</button>
+        </div>
+        <div class="combo">
+          <input id="psearch" type="search" placeholder="Add gene to panel (up to 10)…" autocomplete="off" spellcheck="false">
+          <ul id="psuggest" class="suggest" hidden></ul>
+        </div>
+        <button id="pclear" class="mini" hidden>Clear panel</button>
+        <span id="pmeta" class="meta">Loading…</span>
+      </div>
+      <div class="view-body pn-body">
+        <div id="pchips" class="chip-row"></div>
+        <div id="pn-hint" class="placeholder">
+          <p>Add up to 10 genes to see their <strong>mean NTC z-score</strong> across all strong-perturbation clusters (heatmap rows = genes, cols = clusters).</p>
+          <p>Toggle Leiden / HDBSCAN above. Hover a cell for the cluster label and precise z.</p>
+        </div>
+        <div id="pn-plot" class="pn-plot" hidden></div>
+      </div>
+    </section>
   </main>
 
   <footer>
     <span><a href="https://doi.org/10.1101/2024.11.03.621734" target="_blank" rel="noopener">Doctor et&nbsp;al., bioRxiv 2024</a> · <a href="https://github.com/y-doctor/KOLF2.1J_Perturbation_Cell_Atlas" target="_blank" rel="noopener">source</a></span>
   </footer>
 
-  <script src="js/main.js?v=22"></script>
+  <script src="js/main.js?v=23"></script>
 </body>
 </html>

@@ -7,7 +7,7 @@
 // ============================================================================
 // Router
 // ============================================================================
-const TABS = ['mde', 'clustermap', 'genemap', 'genequery', 'clusters'];
+const TABS = ['mde', 'clustermap', 'genemap', 'genequery', 'clusters', 'panel'];
 const tabButtons = document.querySelectorAll('.tab');
 const views      = Object.fromEntries(
   TABS.map(name => [name, document.getElementById(`view-${name}`)])
@@ -33,6 +33,7 @@ function showTab(name) {
   if (name === 'genemap')    GeneClustermap.onShow();
   if (name === 'genequery')  GeneQuery.onShow();
   if (name === 'clusters')   Clusters.onShow();
+  if (name === 'panel')      Panel.onShow();
 }
 
 tabButtons.forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
@@ -65,8 +66,8 @@ const MDE = (() => {
 
   let fitnessCache = null;
   let signaturesCache = null;
-  function ensureFitness()    { return fitnessCache    || (fitnessCache    = fetch('data/mde/fitness.json?v=22').then(r => r.json())); }
-  function ensureSignatures() { return signaturesCache || (signaturesCache = fetch('data/mde/signatures.json?v=22').then(r => r.json())); }
+  function ensureFitness()    { return fitnessCache    || (fitnessCache    = fetch('data/mde/fitness.json?v=23').then(r => r.json())); }
+  function ensureSignatures() { return signaturesCache || (signaturesCache = fetch('data/mde/signatures.json?v=23').then(r => r.json())); }
 
   let data = [];
   let leidenLabels = {}, hdbscanLabels = {};
@@ -355,7 +356,7 @@ const MDE = (() => {
   }
 
   function init() {
-    return fetch('data/mde.json?v=22').then(r => r.json()).then(payload => {
+    return fetch('data/mde.json?v=23').then(r => r.json()).then(payload => {
       data = payload.points;
       leidenLabels  = payload.leiden_labels  || {};
       hdbscanLabels = payload.hdbscan_labels || {};
@@ -694,9 +695,9 @@ const Clustermap = makeClustermap({
   mainId:   'cmap-main', sideId:   'cmap-side',
   searchId: 'csearch',   suggestId:'csuggest',
   hintId:   'chint',     metaId:   'cmeta',     resetId: 'creset',
-  metaPath: 'data/clustermap/meta.json?v=22',
-  mainPath: 'data/clustermap/corr_int8.bin?v=22',
-  sidePath: 'data/clustermap/corr_side_int8.bin?v=22',
+  metaPath: 'data/clustermap/meta.json?v=23',
+  mainPath: 'data/clustermap/corr_int8.bin?v=23',
+  sidePath: 'data/clustermap/corr_side_int8.bin?v=23',
   mainZmin: -0.2, mainZmax: 0.2,
   sideZmin: -0.5, sideZmax: 0.5,
 });
@@ -707,9 +708,9 @@ const GeneClustermap = makeClustermap({
   mainId:   'gmap-main', sideId:   'gmap-side',
   searchId: 'gsearch',   suggestId:'gsuggest',
   hintId:   'ghint',     metaId:   'gmeta',     resetId: 'greset',
-  metaPath: 'data/genemap/meta.json?v=22',
-  mainPath: 'data/genemap/gene_corr_int8.bin?v=22',
-  sidePath: 'data/genemap/gene_corr_side_int8.bin?v=22',
+  metaPath: 'data/genemap/meta.json?v=23',
+  mainPath: 'data/genemap/gene_corr_int8.bin?v=23',
+  sidePath: 'data/genemap/gene_corr_side_int8.bin?v=23',
   mainZmin: -0.2, mainZmax: 0.2,
   sideZmin: -0.5, sideZmax: 0.5,
 });
@@ -740,7 +741,7 @@ const GeneQuery = (() => {
   let pendingPick = null;   // gene to render after topk lands
 
   function init() {
-    return fetch('data/genes/index.json?v=22').then(r => r.json()).then(idx => {
+    return fetch('data/genes/index.json?v=23').then(r => r.json()).then(idx => {
       genes      = idx.genes || [];
       nPerts     = idx.n_perts;
       K          = idx.k || 25;
@@ -758,7 +759,7 @@ const GeneQuery = (() => {
     if (topk) return Promise.resolve(topk);
     if (topkLoading) return topkLoading;
     META.textContent = 'Loading per-gene query data (~17 MB)…';
-    topkLoading = fetch('data/genes/topk.json?v=22').then(r => r.json()).then(data => {
+    topkLoading = fetch('data/genes/topk.json?v=23').then(r => r.json()).then(data => {
       topk = data;
       META.textContent = `${genes.length.toLocaleString()} genes · ${nPerts.toLocaleString()} perts`;
       return topk;
@@ -976,7 +977,7 @@ const Clusters = (() => {
   function ensureData() {
     if (loaded) return loaded;
     META.textContent = 'Loading cluster summaries…';
-    loaded = fetch('data/clusters/summary.json?v=22').then(r => r.json()).then(d => {
+    loaded = fetch('data/clusters/summary.json?v=23').then(r => r.json()).then(d => {
       data = d;
       META.textContent = meta();
       return d;
@@ -1090,6 +1091,222 @@ const Clusters = (() => {
 })();
 
 // ============================================================================
+// Gene panel tab — user picks up to 10 genes, see mean z across clusters
+// ============================================================================
+const Panel = (() => {
+  const MAX_GENES = 10;
+  const SEARCH = document.getElementById('psearch');
+  const SUG    = document.getElementById('psuggest');
+  const CHIPS  = document.getElementById('pchips');
+  const CLEAR  = document.getElementById('pclear');
+  const META   = document.getElementById('pmeta');
+  const HINT   = document.getElementById('pn-hint');
+  const PLOT   = document.getElementById('pn-plot');
+
+  let meta = null;                  // { scale, genes, leiden:[{id,label,n}], hdbscan:[...] }
+  let matrix = null;                // Int8Array, row-major (n_clusters x n_genes)
+  let nL = 0, nH = 0;               // rows per type (leiden then hdbscan)
+  let geneIdx = new Map();          // gene -> row index
+  let geneLower = [];               // lowercase gene list for search
+  let picked = [];                  // ['GENE1', ...]
+  let ptype = 'leiden';
+  let loaded = null;
+  let activeSugg = -1;
+
+  function ensure() {
+    if (loaded) return loaded;
+    META.textContent = 'Loading cluster means…';
+    loaded = Promise.all([
+      fetch('data/clusters/means_meta.json?v=23').then(r => r.json()),
+      fetch('data/clusters/means.bin?v=23').then(r => r.arrayBuffer()),
+    ]).then(([m, buf]) => {
+      meta = m;
+      nL = meta.leiden.length;
+      nH = meta.hdbscan.length;
+      matrix = new Int8Array(buf);
+      meta.genes.forEach((g, i) => geneIdx.set(g, i));
+      geneLower = meta.genes.map(g => g.toLowerCase());
+      META.textContent = `${meta.genes.length.toLocaleString()} genes · Leiden ${nL} · HDBSCAN ${nH}`;
+    }).catch(err => {
+      META.textContent = 'Failed to load.';
+      throw err;
+    });
+    return loaded;
+  }
+
+  function clusterRow(ptypeLocal, i) {
+    // Returns an array of z values for cluster row (leiden i or hdbscan i)
+    const rowStart = (ptypeLocal === 'leiden' ? i : nL + i) * meta.n_genes;
+    return matrix.subarray(rowStart, rowStart + meta.n_genes);
+  }
+
+  function render() {
+    if (!meta) return;
+    if (!picked.length) {
+      HINT.hidden = false; PLOT.hidden = true; CLEAR.hidden = true; Plotly.purge(PLOT); return;
+    }
+    HINT.hidden = true; PLOT.hidden = false; CLEAR.hidden = false;
+
+    const clusters = meta[ptype];   // [{id,label,n}, ...] in stored order
+    // Build z matrix rows = genes (picked order), cols = clusters (stored order)
+    const z = picked.map(name => {
+      const gi = geneIdx.get(name);
+      const out = new Array(clusters.length);
+      for (let ci = 0; ci < clusters.length; ci++) {
+        const cellRow = clusterRow(ptype, ci);
+        out[ci] = cellRow[gi] * meta.scale;
+      }
+      return out;
+    });
+    const xLabels = clusters.map(c => c.id === -1 ? 'noise' : String(c.id));
+    const clusterLabel = clusters.map(c => c.label && c.label.length
+      ? `Cluster ${c.id} · ${c.label}`
+      : (c.id === -1 ? 'Unclustered' : `Cluster ${c.id}`));
+    // customdata: matching shape of z — repeat the per-column label row per gene
+    const cdata = picked.map(() => clusterLabel);
+    // Color scale RdBu diverging
+    const zmax = 2, zmin = -zmax;
+    const trace = {
+      type: 'heatmap',
+      x: xLabels, y: picked, z,
+      customdata: cdata,
+      colorscale: 'RdBu', reversescale: true, zmin, zmax,
+      hovertemplate: '<b>%{y}</b> × %{customdata}<br>mean z = %{z:.2f}<extra></extra>',
+      colorbar: { title: { text: 'mean z', font: { size: 10 } }, thickness: 8, len: 0.6,
+                  tickfont: { size: 10 } },
+    };
+    const nCols = clusters.length;
+    // Generous height per gene, width follows container
+    const height = Math.max(220, 46 * picked.length + 80);
+    PLOT.style.height = height + 'px';
+    const layout = {
+      margin: { l: 88, r: 60, t: 16, b: 54 },
+      xaxis: {
+        title: { text: `${ptype.toUpperCase()} cluster id`, font: { size: 11 } },
+        type: 'category', automargin: true,
+        tickfont: { size: 10 }, side: 'bottom',
+        dtick: nCols > 30 ? 2 : 1,
+      },
+      yaxis: {
+        type: 'category', autorange: 'reversed',
+        tickfont: { size: 11 }, automargin: true,
+      },
+      plot_bgcolor: '#fff', paper_bgcolor: '#fff', showlegend: false,
+    };
+    Plotly.react(PLOT, [trace], layout, {
+      responsive: true, displaylogo: false,
+      modeBarButtonsToRemove: ['lasso2d','select2d','autoScale2d','toggleSpikelines','zoom2d','pan2d'],
+      toImageButtonOptions: { filename: `KOLF_panel_${ptype}`, scale: 2, format: 'png' },
+    });
+  }
+
+  function renderChips() {
+    CHIPS.innerHTML = '';
+    picked.forEach(name => {
+      const c = document.createElement('span');
+      c.className = 'chip';
+      c.innerHTML = `${escapeHtml(name)}<span class="x" title="Remove">×</span>`;
+      c.querySelector('.x').addEventListener('click', () => {
+        picked = picked.filter(g => g !== name);
+        renderChips(); render();
+      });
+      CHIPS.appendChild(c);
+    });
+  }
+
+  function addGene(name) {
+    if (!name || !geneIdx.has(name)) return;
+    if (picked.includes(name)) return;
+    if (picked.length >= MAX_GENES) {
+      META.textContent = `Panel is full (${MAX_GENES} max). Remove a gene to add another.`;
+      return;
+    }
+    picked.push(name);
+    renderChips(); render();
+    META.textContent = `${meta.genes.length.toLocaleString()} genes · Leiden ${nL} · HDBSCAN ${nH}`;
+  }
+
+  function updateSuggest(raw) {
+    if (!meta) { SUG.hidden = true; return; }
+    const q = (raw || '').trim().toLowerCase();
+    if (!q) { SUG.hidden = true; activeSugg = -1; return; }
+    const starts = [], contains = [];
+    for (let i = 0; i < geneLower.length; i++) {
+      const gl = geneLower[i];
+      if (gl === q) { starts.unshift(i); continue; }
+      if (gl.startsWith(q)) { starts.push(i); if (starts.length > 30) break; continue; }
+      if (gl.includes(q) && contains.length < 30) contains.push(i);
+    }
+    const hits = starts.concat(contains).slice(0, 20).map(i => meta.genes[i]);
+    if (!hits.length) { SUG.hidden = true; return; }
+    SUG.innerHTML = '';
+    hits.forEach((g, i) => {
+      const li = document.createElement('li');
+      li.textContent = g;
+      li.dataset.gene = g;
+      if (i === 0) { li.classList.add('active'); activeSugg = 0; }
+      li.addEventListener('mousedown', (e) => { e.preventDefault(); pickSuggest(g); });
+      SUG.appendChild(li);
+    });
+    SUG.hidden = false;
+  }
+
+  function pickSuggest(g) {
+    addGene(g);
+    SEARCH.value = '';
+    SUG.hidden = true; activeSugg = -1;
+  }
+
+  function onKey(e) {
+    const items = SUG.querySelectorAll('li');
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (items.length && activeSugg >= 0) pickSuggest(items[activeSugg].dataset.gene);
+      else addGene(SEARCH.value.trim().toUpperCase());
+      SEARCH.value = ''; SUG.hidden = true;
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      if (!items.length) return;
+      e.preventDefault();
+      items[activeSugg >= 0 ? activeSugg : 0].classList.remove('active');
+      activeSugg = (activeSugg + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+      items[activeSugg].classList.add('active');
+    } else if (e.key === 'Escape') {
+      SUG.hidden = true; activeSugg = -1;
+    }
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => (
+      { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  }
+
+  function attach() {
+    SEARCH.addEventListener('input',  () => updateSuggest(SEARCH.value));
+    SEARCH.addEventListener('focus',  () => updateSuggest(SEARCH.value));
+    SEARCH.addEventListener('blur',   () => setTimeout(() => { SUG.hidden = true; }, 120));
+    SEARCH.addEventListener('keydown', onKey);
+    CLEAR.addEventListener('click', () => { picked = []; renderChips(); render(); });
+    document.querySelectorAll('#view-panel .seg').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#view-panel .seg').forEach(b => {
+          const on = (b === btn);
+          b.classList.toggle('active', on);
+          b.setAttribute('aria-checked', on);
+        });
+        ptype = btn.dataset.ptype;
+        render();
+      });
+    });
+  }
+
+  function init() { attach(); }
+  function onShow() {
+    ensure().then(() => { render(); if (PLOT.offsetWidth) Plotly.Plots.resize(PLOT); });
+  }
+  return { init, onShow };
+})();
+
+// ============================================================================
 // Boot
 // ============================================================================
 MDE.init();
@@ -1097,6 +1314,7 @@ Clustermap.init();
 GeneClustermap.init();
 GeneQuery.init();
 Clusters.init();
+Panel.init();
 
 // Initial route
 const initial = location.hash.replace('#', '');
