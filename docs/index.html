@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>KOLF2.1J Perturbation Atlas</title>
-  <link rel="stylesheet" href="css/style.css?v=24">
+  <link rel="stylesheet" href="css/style.css?v=25">
   <script src="https://cdn.plot.ly/plotly-cartesian-2.35.2.min.js" charset="utf-8"></script>
 </head>
 <body>
@@ -47,14 +47,6 @@
               <dt>edist (vs NTC)</dt><dd id="p-edist">—</dd>
               <dt>fitness</dt>     <dd id="p-fit">—</dd>
             </dl>
-            <section>
-              <h3>Top up-regulated genes <span class="muted-tag">averaged signature</span></h3>
-              <table class="degs" id="p-up"><tbody></tbody></table>
-            </section>
-            <section>
-              <h3>Top down-regulated genes <span class="muted-tag">averaged signature</span></h3>
-              <table class="degs" id="p-dn"><tbody></tbody></table>
-            </section>
             <section>
               <h3>Similar perturbations <span class="muted-tag">Pearson on z-scores</span></h3>
               <ol class="neighbors" id="p-sim"></ol>
@@ -117,6 +109,10 @@
     <!-- Gene query view -->
     <section id="view-genequery" class="view" role="tabpanel" hidden>
       <div class="view-controls">
+        <div class="toggle" role="radiogroup" aria-label="Query mode">
+          <button class="seg active" data-qmode="gene" role="radio" aria-checked="true">Per gene</button>
+          <button class="seg"        data-qmode="pert" role="radio" aria-checked="false">Per perturbation</button>
+        </div>
         <div class="combo">
           <input id="qsearch" type="search" placeholder="Search expressed gene…" autocomplete="off" spellcheck="false">
           <ul id="qsuggest" class="suggest" hidden></ul>
@@ -133,11 +129,11 @@
           <div id="q-hist" class="gq-hist"></div>
           <div class="gq-cols">
             <section>
-              <h3>Top 25 perturbations · highest z-score</h3>
+              <h3 id="q-up-h">Top 50 perturbations · highest z-score</h3>
               <table class="degs"><tbody id="q-up"></tbody></table>
             </section>
             <section>
-              <h3>Top 25 perturbations · lowest z-score</h3>
+              <h3 id="q-dn-h">Top 50 perturbations · lowest z-score</h3>
               <table class="degs"><tbody id="q-dn"></tbody></table>
             </section>
           </div>
@@ -210,6 +206,6 @@
     <span><a href="https://doi.org/10.1101/2024.11.03.621734" target="_blank" rel="noopener">Doctor et&nbsp;al., bioRxiv 2024</a> · <a href="https://github.com/y-doctor/KOLF2.1J_Perturbation_Cell_Atlas" target="_blank" rel="noopener">source</a></span>
   </footer>
 
-  <script src="js/main.js?v=24"></script>
+  <script src="js/main.js?v=25"></script>
 </body>
 </html>

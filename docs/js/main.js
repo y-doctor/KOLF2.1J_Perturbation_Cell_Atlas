@@ -58,16 +58,14 @@ const MDE = (() => {
     ndegs:   document.getElementById('p-ndegs'),
     edist:   document.getElementById('p-edist'),
     fit:     document.getElementById('p-fit'),
-    up:      document.getElementById('p-up').querySelector('tbody'),
-    dn:      document.getElementById('p-dn').querySelector('tbody'),
     sim:     document.getElementById('p-sim'),
     nbr:     document.getElementById('p-nbr'),
   };
 
   let fitnessCache = null;
   let signaturesCache = null;
-  function ensureFitness()    { return fitnessCache    || (fitnessCache    = fetch('data/mde/fitness.json?v=24').then(r => r.json())); }
-  function ensureSignatures() { return signaturesCache || (signaturesCache = fetch('data/mde/signatures.json?v=24').then(r => r.json())); }
+  function ensureFitness()    { return fitnessCache    || (fitnessCache    = fetch('data/mde/fitness.json?v=25').then(r => r.json())); }
+  function ensureSignatures() { return signaturesCache || (signaturesCache = fetch('data/mde/signatures.json?v=25').then(r => r.json())); }
 
   let data = [];
   let leidenLabels = {}, hdbscanLabels = {};
@@ -312,8 +310,6 @@ const MDE = (() => {
     P.ndegs.textContent = fmtWithRank(fmtInt(r.n), nDegsRank.get(gene), totalRanked);
     P.edist.textContent = fmtWithRank(fmtFloat(r.e, 2), edistRank.get(gene), totalRanked);
     P.fit.textContent   = '…';
-    renderDegsTable(P.up, null);
-    renderDegsTable(P.dn, null);
     renderSimList(P.sim, null);
     renderNeighbors(P.nbr, nearestNeighbors(idx, 10));
     PANEL.classList.add('open');
@@ -329,13 +325,11 @@ const MDE = (() => {
 
     ensureSignatures().then(sigs => {
       const s = sigs[gene];
-      if (!s) { renderDegsTable(P.up, []); renderDegsTable(P.dn, []); renderSimList(P.sim, []); return; }
-      renderDegsTable(P.up, s.up);
-      renderDegsTable(P.dn, s.dn);
+      if (!s) { renderSimList(P.sim, []); return; }
       renderSimList(P.sim, s.neighbors);
     }).catch(e => {
       console.error('signatures load failed', e);
-      renderDegsTable(P.up, []); renderDegsTable(P.dn, []); renderSimList(P.sim, []);
+      renderSimList(P.sim, []);
     });
   }
   function closePanel() {
@@ -356,7 +350,7 @@ const MDE = (() => {
   }
 
   function init() {
-    return fetch('data/mde.json?v=24').then(r => r.json()).then(payload => {
+    return fetch('data/mde.json?v=25').then(r => r.json()).then(payload => {
       data = payload.points;
       leidenLabels  = payload.leiden_labels  || {};
       hdbscanLabels = payload.hdbscan_labels || {};
@@ -695,9 +689,9 @@ const Clustermap = makeClustermap({
   mainId:   'cmap-main', sideId:   'cmap-side',
   searchId: 'csearch',   suggestId:'csuggest',
   hintId:   'chint',     metaId:   'cmeta',     resetId: 'creset',
-  metaPath: 'data/clustermap/meta.json?v=24',
-  mainPath: 'data/clustermap/corr_int8.bin?v=24',
-  sidePath: 'data/clustermap/corr_side_int8.bin?v=24',
+  metaPath: 'data/clustermap/meta.json?v=25',
+  mainPath: 'data/clustermap/corr_int8.bin?v=25',
+  sidePath: 'data/clustermap/corr_side_int8.bin?v=25',
   mainZmin: -0.2, mainZmax: 0.2,
   sideZmin: -0.5, sideZmax: 0.5,
 });
@@ -708,16 +702,17 @@ const GeneClustermap = makeClustermap({
   mainId:   'gmap-main', sideId:   'gmap-side',
   searchId: 'gsearch',   suggestId:'gsuggest',
   hintId:   'ghint',     metaId:   'gmeta',     resetId: 'greset',
-  metaPath: 'data/genemap/meta.json?v=24',
-  mainPath: 'data/genemap/gene_corr_int8.bin?v=24',
-  sidePath: 'data/genemap/gene_corr_side_int8.bin?v=24',
+  metaPath: 'data/genemap/meta.json?v=25',
+  mainPath: 'data/genemap/gene_corr_int8.bin?v=25',
+  sidePath: 'data/genemap/gene_corr_side_int8.bin?v=25',
   mainZmin: -0.2, mainZmax: 0.2,
   sideZmin: -0.5, sideZmax: 0.5,
 });
 
 // ============================================================================
-// Gene query tab — for any expressed gene, show top 25 perts with highest
-// and lowest mean NTC z-score (post-basic-QC universe of ~11,687 perts).
+// Query tab — dual mode:
+//   per-gene  : pick an expressed gene, see top 50 up/dn perts + histogram
+//   per-pert  : pick a perturbation, see top 50 up/dn genes + histogram
 // ============================================================================
 const GeneQuery = (() => {
   const SEARCH = document.getElementById('qsearch');
@@ -730,57 +725,130 @@ const GeneQuery = (() => {
   const HIST   = document.getElementById('q-hist');
   const UP     = document.getElementById('q-up');
   const DN     = document.getElementById('q-dn');
+  const UP_H   = document.getElementById('q-up-h');
+  const DN_H   = document.getElementById('q-dn-h');
 
-  let genes = [];
-  let nPerts = 0, K = 25;
-  let binCenters = [];
-  let binEdges = [];
-  let topk = null;          // lazy-loaded big payload
-  let topkLoading = null;
+  const MODES = {
+    gene: {
+      indexPath: 'data/genes/index.json?v=25',
+      topkPath:  'data/genes/topk.json?v=25',
+      indexKey:  'genes',       // index.json key holding the searchable list
+      counterKey:'n_perts',     // index.json key for the "other-axis" size
+      entity:    'gene',
+      other:     'perturbations',
+      placeholder: 'Search expressed gene…',
+      hintHtml:  '<p>Pick an expressed <strong>gene</strong> to see the perturbations that most strongly <strong>up-regulate</strong> or <strong>down-regulate</strong> it (NTC z-score, post-basic-QC universe of all perturbations).</p>',
+      upHeader:  'Top 50 perturbations · highest z-score',
+      dnHeader:  'Top 50 perturbations · lowest z-score',
+      axisX:     'NTC z-score',
+      axisY:     '# perturbations',
+      hoverUnit: 'perts',
+      defaultPick: 'POU5F1',
+    },
+    pert: {
+      indexPath: 'data/perts/index.json?v=25',
+      topkPath:  'data/perts/topk.json?v=25',
+      indexKey:  'perts',
+      counterKey:'n_genes',
+      entity:    'perturbation',
+      other:     'genes',
+      placeholder: 'Search perturbation…',
+      hintHtml:  '<p>Pick a <strong>perturbation</strong> to see the genes it most strongly <strong>up-regulates</strong> or <strong>down-regulates</strong> (NTC z-score across expressed genes).</p>',
+      upHeader:  'Top 50 genes · highest z-score',
+      dnHeader:  'Top 50 genes · lowest z-score',
+      axisX:     'NTC z-score',
+      axisY:     '# genes',
+      hoverUnit: 'genes',
+      defaultPick: 'POU5F1',
+    },
+  };
+
+  // Per-mode state: each mode caches its own index + topk payload so switching
+  // doesn't re-fetch.
+  const state = {
+    gene: { keys: [], other: 0, K: 50, binCenters: [], binEdges: [], topk: null, topkLoading: null, indexPromise: null },
+    pert: { keys: [], other: 0, K: 50, binCenters: [], binEdges: [], topk: null, topkLoading: null, indexPromise: null },
+  };
+  let mode = 'gene';
   let activeSugg = -1;
-  let pendingPick = null;   // gene to render after topk lands
-  let autoOpened = false;   // run the auto-pick once per session
-  let initPromise = null;
+  let autoOpened = false;
+
+  function cfg() { return MODES[mode]; }
+  function S()   { return state[mode]; }
 
   function init() {
-    initPromise = fetch('data/genes/index.json?v=24').then(r => r.json()).then(idx => {
-      genes      = idx.genes || [];
-      nPerts     = idx.n_perts;
-      K          = idx.k || 25;
-      binCenters = idx.bin_centers || [];
-      binEdges   = idx.bin_edges   || [];
-      META.textContent = `${genes.length.toLocaleString()} expressed genes · ${nPerts.toLocaleString()} perturbations`;
-      attachEvents();
-    }).catch(err => {
-      META.textContent = `Failed to load gene index: ${err.message || err}`;
-    });
-    return initPromise;
+    // Kick off gene-mode index immediately (pre-fetch for snappy first-load).
+    ensureIndex('gene');
+    attachEvents();
+    return state.gene.indexPromise;
   }
+
+  function ensureIndex(m) {
+    const s = state[m];
+    if (s.indexPromise) return s.indexPromise;
+    const c = MODES[m];
+    s.indexPromise = fetch(c.indexPath).then(r => r.json()).then(idx => {
+      s.keys       = idx[c.indexKey] || [];
+      s.other      = idx[c.counterKey] || 0;
+      s.K          = idx.k || 50;
+      s.binCenters = idx.bin_centers || [];
+      s.binEdges   = idx.bin_edges   || [];
+      if (m === mode) refreshMeta();
+    }).catch(err => {
+      if (m === mode) META.textContent = `Failed to load ${c.entity} index: ${err.message || err}`;
+      throw err;
+    });
+    return s.indexPromise;
+  }
+
+  function ensureTopk(m) {
+    const s = state[m];
+    if (s.topk) return Promise.resolve(s.topk);
+    if (s.topkLoading) return s.topkLoading;
+    const c = MODES[m];
+    META.textContent = `Loading per-${c.entity} query data…`;
+    s.topkLoading = fetch(c.topkPath).then(r => r.json()).then(data => {
+      s.topk = data;
+      if (m === mode) refreshMeta();
+      return s.topk;
+    });
+    return s.topkLoading;
+  }
+
+  function refreshMeta() {
+    const c = cfg(), s = S();
+    if (!s.keys.length) return;
+    META.textContent = `${s.keys.length.toLocaleString()} ${c.entity}s · ${s.other.toLocaleString()} ${c.other}`;
+  }
+
   function onShow() {
     if (SEARCH) SEARCH.focus();
     // On first visit, auto-open to POU5F1 for immediate context.
-    // Wait for the gene index to land if it's still loading.
-    if (!autoOpened && initPromise) {
-      initPromise.then(() => {
-        if (autoOpened) return;
-        if (genes.includes('POU5F1') && RESULTS && RESULTS.hidden) {
-          autoOpened = true;
-          selectGene('POU5F1');
-        }
-      });
-    }
+    if (autoOpened) return;
+    const p = state.gene.indexPromise || ensureIndex('gene');
+    p.then(() => {
+      if (autoOpened) return;
+      if (mode === 'gene' && state.gene.keys.includes('POU5F1') && RESULTS && RESULTS.hidden) {
+        autoOpened = true;
+        selectItem('POU5F1');
+      }
+    });
   }
 
-  function ensureTopk() {
-    if (topk) return Promise.resolve(topk);
-    if (topkLoading) return topkLoading;
-    META.textContent = 'Loading per-gene query data (~17 MB)…';
-    topkLoading = fetch('data/genes/topk.json?v=24').then(r => r.json()).then(data => {
-      topk = data;
-      META.textContent = `${genes.length.toLocaleString()} genes · ${nPerts.toLocaleString()} perts`;
-      return topk;
-    });
-    return topkLoading;
+  function applyMode() {
+    const c = cfg();
+    SEARCH.value = '';
+    SEARCH.placeholder = c.placeholder;
+    HINT.innerHTML = c.hintHtml;
+    HINT.hidden = false;
+    RESULTS.hidden = true;
+    UP_H.textContent = c.upHeader;
+    DN_H.textContent = c.dnHeader;
+    closeSuggest();
+    Plotly.purge(HIST);
+    fillTable(UP, []); fillTable(DN, []);
+    ensureIndex(mode).then(refreshMeta).catch(() => {});
+    SEARCH.focus();
   }
 
   function attachEvents() {
@@ -788,14 +856,28 @@ const GeneQuery = (() => {
     SEARCH.addEventListener('focus',   () => updateSuggest(SEARCH.value));
     SEARCH.addEventListener('blur',    () => setTimeout(closeSuggest, 120));
     SEARCH.addEventListener('keydown', onSearchKey);
+    document.querySelectorAll('#view-genequery .seg').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const newMode = btn.dataset.qmode;
+        if (newMode === mode) return;
+        document.querySelectorAll('#view-genequery .seg').forEach(b => {
+          const on = (b === btn);
+          b.classList.toggle('active', on);
+          b.setAttribute('aria-checked', on);
+        });
+        mode = newMode;
+        applyMode();
+      });
+    });
   }
 
   function fuzzy(q) {
+    const keys = S().keys;
     q = q.trim().toUpperCase();
-    if (!q) return genes.slice(0, 12);
-    const eq  = genes.filter(g => g.toUpperCase() === q);
-    const pre = genes.filter(g => g.toUpperCase().startsWith(q) && g.toUpperCase() !== q);
-    const sub = genes.filter(g => !g.toUpperCase().startsWith(q) && g.toUpperCase().includes(q));
+    if (!q) return keys.slice(0, 12);
+    const eq  = keys.filter(g => g.toUpperCase() === q);
+    const pre = keys.filter(g => g.toUpperCase().startsWith(q) && g.toUpperCase() !== q);
+    const sub = keys.filter(g => !g.toUpperCase().startsWith(q) && g.toUpperCase().includes(q));
     return [...eq, ...pre, ...sub].slice(0, 12);
   }
   function updateSuggest(q) {
@@ -811,7 +893,7 @@ const GeneQuery = (() => {
         const z = p.slice(idx + q.trim().length);
         li.innerHTML = `${a}<mark>${m}</mark>${z}`;
       } else { li.textContent = p; }
-      li.addEventListener('mousedown', e => { e.preventDefault(); selectGene(p); });
+      li.addEventListener('mousedown', e => { e.preventDefault(); selectItem(p); });
       SUG.appendChild(li);
     });
     activeSugg = -1;
@@ -835,7 +917,7 @@ const GeneQuery = (() => {
       e.preventDefault();
       const pick = activeSugg >= 0 ? items[activeSugg].textContent
                                    : (items[0] && items[0].textContent);
-      if (pick) selectGene(pick);
+      if (pick) selectItem(pick);
     } else if (e.key === 'Escape') {
       closeSuggest();
     }
@@ -857,25 +939,28 @@ const GeneQuery = (() => {
     }
   }
 
-  function selectGene(g) {
-    if (!genes.includes(g)) return;
-    SEARCH.value = g;
+  function selectItem(key) {
+    const s = S(), c = cfg();
+    if (!s.keys.includes(key)) return;
+    SEARCH.value = key;
     closeSuggest();
     HINT.hidden = true;
     RESULTS.hidden = false;
-    GENE.textContent = g;
+    GENE.textContent = key;
     SUB.textContent = 'loading…';
     fillTable(UP, []); fillTable(DN, []);
-    ensureTopk().then(d => {
-      const entry = d[g];
+    const modeAtCall = mode;
+    ensureTopk(modeAtCall).then(d => {
+      if (mode !== modeAtCall) return;     // user switched modes mid-fetch
+      const entry = d[key];
       if (!entry) {
         SUB.textContent = 'no data';
         fillTable(UP, []); fillTable(DN, []);
         Plotly.purge(HIST);
         return;
       }
-      SUB.textContent = `top ${K} perts up · top ${K} perts down · NTC z-score across ${nPerts.toLocaleString()} perts`;
-      renderHist(g, entry);
+      SUB.textContent = `top ${s.K} ${c.other} up · top ${s.K} ${c.other} down · NTC z-score across ${s.other.toLocaleString()} ${c.other}`;
+      renderHist(key, entry);
       fillTable(UP, entry.up);
       fillTable(DN, entry.dn);
     }).catch(err => {
@@ -883,14 +968,16 @@ const GeneQuery = (() => {
     });
   }
 
-  function renderHist(gene, entry) {
+  function renderHist(key, entry) {
+    const s = S(), c = cfg();
+    const binCenters = s.binCenters, binEdges = s.binEdges;
     if (!entry.h || !binCenters.length) { Plotly.purge(HIST); return; }
     const counts = entry.h;
     // Color bars by sign (red for positive, blue for negative, gray near zero)
     const colors = binCenters.map(c =>
       c >= 0.25 ? '#d62728' : (c <= -0.25 ? '#1f77b4' : '#bbb')
     );
-    // Threshold lines at the 25th highest / 25th lowest pert z values
+    // Threshold z at the Kth highest / Kth lowest entity
     const upZ = entry.up && entry.up.length ? entry.up[entry.up.length - 1][1] : null;
     const dnZ = entry.dn && entry.dn.length ? entry.dn[entry.dn.length - 1][1] : null;
     const shapes = [];
@@ -902,12 +989,11 @@ const GeneQuery = (() => {
       type: 'line', xref: 'x', yref: 'paper', x0: dnZ, x1: dnZ, y0: 0, y1: 1,
       line: { color: '#1f77b4', width: 1, dash: 'dot' },
     });
-    // Bucket the 25 up + 25 dn perts into histogram bins so each bar's hover
-    // tooltip lists the named perts falling in that z range.
+    // Bucket the K up + K dn named entities into histogram bins so each bar's
+    // hover tooltip lists the named entities falling in that z range.
     const nBins = counts.length;
     const perBin = Array.from({ length: nBins }, () => ({ up: [], dn: [] }));
     const binFor = (z) => {
-      // binEdges has length nBins+1; find i such that edges[i] <= z < edges[i+1]
       if (binEdges.length < 2) return -1;
       if (z < binEdges[0] || z > binEdges[binEdges.length - 1]) return -1;
       let lo = 0, hi = nBins - 1;
@@ -933,13 +1019,13 @@ const GeneQuery = (() => {
     const annotations = [];
     if (upZ != null) annotations.push({
       x: 1, y: 0.98, xref: 'paper', yref: 'paper',
-      text: `top 25 ≥ ${upZ.toFixed(2)}`,
+      text: `top ${s.K} ≥ ${upZ.toFixed(2)}`,
       showarrow: false, font: { size: 10, color: '#d62728' },
       xanchor: 'right', yanchor: 'top',
     });
     if (dnZ != null) annotations.push({
       x: 0, y: 0.98, xref: 'paper', yref: 'paper',
-      text: `bottom 25 ≤ ${dnZ.toFixed(2)}`,
+      text: `bottom ${s.K} ≤ ${dnZ.toFixed(2)}`,
       showarrow: false, font: { size: 10, color: '#1f77b4' },
       xanchor: 'left', yanchor: 'top',
     });
@@ -949,11 +1035,11 @@ const GeneQuery = (() => {
       marker: { color: colors, line: { width: 0 } },
       width: binCenters.length > 1 ? (binCenters[1] - binCenters[0]) * 0.9 : 0.2,
       customdata,
-      hovertemplate: 'z ≈ %{x:.2f}<br>%{y} perts%{customdata}<extra></extra>',
+      hovertemplate: `z ≈ %{x:.2f}<br>%{y} ${c.hoverUnit}%{customdata}<extra></extra>`,
     }], {
       margin: { l: 50, r: 16, t: 22, b: 38 },
-      xaxis: { title: { text: 'NTC z-score', font: { size: 11 } }, zeroline: true, zerolinecolor: '#bbb' },
-      yaxis: { title: { text: '# perturbations', font: { size: 11 } } },
+      xaxis: { title: { text: c.axisX, font: { size: 11 } }, zeroline: true, zerolinecolor: '#bbb' },
+      yaxis: { title: { text: c.axisY, font: { size: 11 } } },
       bargap: 0.05,
       hovermode: 'x',
       showlegend: false,
@@ -962,7 +1048,7 @@ const GeneQuery = (() => {
     }, {
       responsive: true, displaylogo: false,
       modeBarButtonsToRemove: ['lasso2d','select2d','autoScale2d','toggleSpikelines','zoom2d','pan2d','zoomIn2d','zoomOut2d'],
-      toImageButtonOptions: { filename: `KOLF_query_${gene}`, scale: 2, format: 'png' },
+      toImageButtonOptions: { filename: `KOLF_query_${key}`, scale: 2, format: 'png' },
     });
   }
 
@@ -994,7 +1080,7 @@ const Clusters = (() => {
   function ensureData() {
     if (loaded) return loaded;
     META.textContent = 'Loading cluster summaries…';
-    loaded = fetch('data/clusters/summary.json?v=24').then(r => r.json()).then(d => {
+    loaded = fetch('data/clusters/summary.json?v=25').then(r => r.json()).then(d => {
       data = d;
       META.textContent = meta();
       return d;
@@ -1129,8 +1215,8 @@ const Panel = (() => {
     if (loaded) return loaded;
     META.textContent = 'Loading cluster means…';
     loaded = Promise.all([
-      fetch('data/clusters/means_meta.json?v=24').then(r => r.json()),
-      fetch('data/clusters/means.bin?v=24').then(r => r.arrayBuffer()),
+      fetch('data/clusters/means_meta.json?v=25').then(r => r.json()),
+      fetch('data/clusters/means.bin?v=25').then(r => r.arrayBuffer()),
     ]).then(([m, buf]) => {
       meta = m;
       nL = meta.leiden.length;
