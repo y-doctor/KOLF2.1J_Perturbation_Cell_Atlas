@@ -13,8 +13,6 @@
     hdb:    document.getElementById('p-hdb'),
     ndegs:  document.getElementById('p-ndegs'),
     edist:  document.getElementById('p-edist'),
-    up:     document.getElementById('p-up').querySelector('tbody'),
-    dn:     document.getElementById('p-dn').querySelector('tbody'),
     nbr:    document.getElementById('p-nbr'),
   };
 
@@ -29,7 +27,6 @@
   let mode = 'l';              // 'l' | 'h'
   let xRange = null, yRange = null;
   let selectedIdx = null;
-  let degsCache = null;
 
   const GRAY = '#c7c7c7';
   function clusterColor(v) {
@@ -179,24 +176,6 @@
     return rank ? `${valStr} · ${fmtRank(rank, total)}` : valStr;
   }
 
-  function renderDegsTable(tbody, rows) {
-    tbody.innerHTML = '';
-    if (!rows || rows.length === 0) {
-      const tr = document.createElement('tr');
-      tr.innerHTML = '<td colspan="2" style="color:var(--muted)">—</td>';
-      tbody.appendChild(tr);
-      return;
-    }
-    for (const r of rows) {
-      const tr = document.createElement('tr');
-      const g = document.createElement('td'); g.textContent = r.g;
-      const l = document.createElement('td');
-      l.textContent = (r.lfc >= 0 ? '+' : '') + r.lfc.toFixed(2);
-      tr.appendChild(g); tr.appendChild(l);
-      tbody.appendChild(tr);
-    }
-  }
-
   function nearestNeighbors(idx, k = 10) {
     const a = data[idx];
     const out = [];
@@ -223,14 +202,7 @@
     }
   }
 
-  async function ensureDegs() {
-    if (degsCache) return degsCache;
-    const r = await fetch('data/degs.json');
-    degsCache = await r.json();
-    return degsCache;
-  }
-
-  async function openPanel(idx) {
+  function openPanel(idx) {
     const r = data[idx];
     P.gene.textContent   = r.g;
     P.leiden.textContent = clusterLabelFor(r, 'l');
@@ -242,15 +214,6 @@
 
     PANEL.classList.add('open');
     PANEL.setAttribute('aria-hidden', 'false');
-
-    try {
-      const degs = await ensureDegs();
-      const d = degs[r.g];
-      renderDegsTable(P.up, d ? d.up : null);
-      renderDegsTable(P.dn, d ? d.dn : null);
-    } catch (e) {
-      console.error('degs load failed', e);
-    }
   }
 
   function closePanel() {
