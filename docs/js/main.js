@@ -65,8 +65,8 @@ const MDE = (() => {
 
   let fitnessCache = null;
   let signaturesCache = null;
-  function ensureFitness()    { return fitnessCache    || (fitnessCache    = fetch('data/mde/fitness.json?v=19').then(r => r.json())); }
-  function ensureSignatures() { return signaturesCache || (signaturesCache = fetch('data/mde/signatures.json?v=19').then(r => r.json())); }
+  function ensureFitness()    { return fitnessCache    || (fitnessCache    = fetch('data/mde/fitness.json?v=20').then(r => r.json())); }
+  function ensureSignatures() { return signaturesCache || (signaturesCache = fetch('data/mde/signatures.json?v=20').then(r => r.json())); }
 
   let data = [];
   let leidenLabels = {}, hdbscanLabels = {};
@@ -355,7 +355,7 @@ const MDE = (() => {
   }
 
   function init() {
-    return fetch('data/mde.json?v=19').then(r => r.json()).then(payload => {
+    return fetch('data/mde.json?v=20').then(r => r.json()).then(payload => {
       data = payload.points;
       leidenLabels  = payload.leiden_labels  || {};
       hdbscanLabels = payload.hdbscan_labels || {};
@@ -704,9 +704,9 @@ const Clustermap = makeClustermap({
   mainId:   'cmap-main', sideId:   'cmap-side',
   searchId: 'csearch',   suggestId:'csuggest',
   hintId:   'chint',     metaId:   'cmeta',     resetId: 'creset',
-  metaPath: 'data/clustermap/meta.json?v=19',
-  mainPath: 'data/clustermap/corr_int8.bin?v=19',
-  sidePath: 'data/clustermap/corr_side_int8.bin?v=19',
+  metaPath: 'data/clustermap/meta.json?v=20',
+  mainPath: 'data/clustermap/corr_int8.bin?v=20',
+  sidePath: 'data/clustermap/corr_side_int8.bin?v=20',
   mainZmin: -0.2, mainZmax: 0.2,
   sideZmin: -0.5, sideZmax: 0.5,
 });
@@ -717,9 +717,9 @@ const GeneClustermap = makeClustermap({
   mainId:   'gmap-main', sideId:   'gmap-side',
   searchId: 'gsearch',   suggestId:'gsuggest',
   hintId:   'ghint',     metaId:   'gmeta',     resetId: 'greset',
-  metaPath: 'data/genemap/meta.json?v=19',
-  mainPath: 'data/genemap/gene_corr_int8.bin?v=19',
-  sidePath: 'data/genemap/gene_corr_side_int8.bin?v=19',
+  metaPath: 'data/genemap/meta.json?v=20',
+  mainPath: 'data/genemap/gene_corr_int8.bin?v=20',
+  sidePath: 'data/genemap/gene_corr_side_int8.bin?v=20',
   mainZmin: -0.2, mainZmax: 0.2,
   sideZmin: -0.5, sideZmax: 0.5,
 });
@@ -750,7 +750,7 @@ const GeneQuery = (() => {
   let pendingPick = null;   // gene to render after topk lands
 
   function init() {
-    return fetch('data/genes/index.json?v=19').then(r => r.json()).then(idx => {
+    return fetch('data/genes/index.json?v=20').then(r => r.json()).then(idx => {
       genes      = idx.genes || [];
       nPerts     = idx.n_perts;
       K          = idx.k || 25;
@@ -768,7 +768,7 @@ const GeneQuery = (() => {
     if (topk) return Promise.resolve(topk);
     if (topkLoading) return topkLoading;
     META.textContent = 'Loading per-gene query data (~17 MB)…';
-    topkLoading = fetch('data/genes/topk.json?v=19').then(r => r.json()).then(data => {
+    topkLoading = fetch('data/genes/topk.json?v=20').then(r => r.json()).then(data => {
       topk = data;
       META.textContent = `${genes.length.toLocaleString()} genes · ${nPerts.toLocaleString()} perts`;
       return topk;
@@ -895,33 +895,35 @@ const GeneQuery = (() => {
       type: 'line', xref: 'x', yref: 'paper', x0: dnZ, x1: dnZ, y0: 0, y1: 1,
       line: { color: '#1f77b4', width: 1, dash: 'dot' },
     });
-    // Stagger labels for the 25 up and 25 dn perts so they don't collide.
-    // Labels sit above the plot area (yref=paper, y>1) angled diagonally.
-    // Use 5 rows; each row's y offset decreases to pack labels close to the top.
-    const ROWS = 5;
-    const ROW_STEP = 0.045;         // paper y between rows
-    const BASE_Y  = 1.01;           // first row just above plot
-    const annotations = [];
-    const pushLabels = (list, color, sort) => {
-      if (!list || !list.length) return;
-      // Sort by z so adjacent labels are in z-order (helps reduce overlap since
-      // the stagger row cycles through close neighbors).
-      const sorted = list.slice().sort((a, b) => sort * (a[1] - b[1]));
-      sorted.forEach(([name, z], i) => {
-        annotations.push({
-          x: z, y: BASE_Y + (i % ROWS) * ROW_STEP,
-          xref: 'x', yref: 'paper',
-          text: name,
-          showarrow: false,
-          textangle: -55,
-          font: { size: 9, color, family: 'ui-monospace, SFMono-Regular, monospace' },
-          xanchor: 'left', yanchor: 'bottom',
-        });
-      });
+    // Bucket the 25 up + 25 dn perts into histogram bins so each bar's hover
+    // tooltip lists the named perts falling in that z range.
+    const nBins = counts.length;
+    const perBin = Array.from({ length: nBins }, () => ({ up: [], dn: [] }));
+    const binFor = (z) => {
+      // binEdges has length nBins+1; find i such that edges[i] <= z < edges[i+1]
+      if (binEdges.length < 2) return -1;
+      if (z < binEdges[0] || z > binEdges[binEdges.length - 1]) return -1;
+      let lo = 0, hi = nBins - 1;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (z < binEdges[mid + 1]) hi = mid; else lo = mid + 1;
+      }
+      return lo;
     };
-    pushLabels(entry.up, '#d62728', -1);   // largest z first
-    pushLabels(entry.dn, '#1f77b4',  1);   // smallest z first
-    // Keep threshold summary annotations in the left/right corners below
+    (entry.up || []).forEach(([name, z]) => {
+      const b = binFor(z); if (b >= 0) perBin[b].up.push([name, z]);
+    });
+    (entry.dn || []).forEach(([name, z]) => {
+      const b = binFor(z); if (b >= 0) perBin[b].dn.push([name, z]);
+    });
+    const customdata = perBin.map(({ up, dn }) => {
+      const lines = [];
+      up.forEach(([n, z]) => lines.push(`<span style="color:#d62728">▲ ${n} (${z.toFixed(2)})</span>`));
+      dn.forEach(([n, z]) => lines.push(`<span style="color:#1f77b4">▼ ${n} (${z.toFixed(2)})</span>`));
+      return lines.length ? '<br>' + lines.join('<br>') : '';
+    });
+
+    const annotations = [];
     if (upZ != null) annotations.push({
       x: 1, y: 0.98, xref: 'paper', yref: 'paper',
       text: `top 25 ≥ ${upZ.toFixed(2)}`,
@@ -939,9 +941,10 @@ const GeneQuery = (() => {
       x: binCenters, y: counts,
       marker: { color: colors, line: { width: 0 } },
       width: binCenters.length > 1 ? (binCenters[1] - binCenters[0]) * 0.9 : 0.2,
-      hovertemplate: 'z ≈ %{x:.2f}<br>%{y} perts<extra></extra>',
+      customdata,
+      hovertemplate: 'z ≈ %{x:.2f}<br>%{y} perts%{customdata}<extra></extra>',
     }], {
-      margin: { l: 50, r: 16, t: 90, b: 38 },
+      margin: { l: 50, r: 16, t: 22, b: 38 },
       xaxis: { title: { text: 'NTC z-score', font: { size: 11 } }, zeroline: true, zerolinecolor: '#bbb' },
       yaxis: { title: { text: '# perturbations', font: { size: 11 } } },
       bargap: 0.05,
