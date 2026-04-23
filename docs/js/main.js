@@ -1,17 +1,23 @@
 /* KOLF2.1J Perturbation Atlas viewer
-   Tabs: MDE (#mde), Pert clustermap (#clustermap),
-         Gene clustermap (#genemap), Gene query (#genequery),
-         Clusters (#clusters).
+   Tabs: MDE (#mde), Clustermaps (#clustermap, toggle pert/gene),
+         Gene query (#genequery), Clusters (#clusters), Gene panel (#panel).
 */
 
 // ============================================================================
 // Router
 // ============================================================================
-const TABS = ['mde', 'clustermap', 'genemap', 'genequery', 'clusters', 'panel'];
+const TABS = ['mde', 'clustermap', 'genequery', 'clusters', 'panel'];
 const tabButtons = document.querySelectorAll('.tab');
 const views      = Object.fromEntries(
   TABS.map(name => [name, document.getElementById(`view-${name}`)])
 );
+
+// Clustermap subview mode: 'pert' or 'gene'. Toggled within the tab.
+let cmapMode = 'pert';
+function onCmapShow() {
+  if (cmapMode === 'pert') Clustermap.onShow();
+  else                     GeneClustermap.onShow();
+}
 
 function showTab(name) {
   if (!TABS.includes(name)) name = 'mde';
@@ -29,8 +35,7 @@ function showTab(name) {
     history.replaceState(null, '', `#${name}`);
   }
   if (name === 'mde')        MDE.onShow();
-  if (name === 'clustermap') Clustermap.onShow();
-  if (name === 'genemap')    GeneClustermap.onShow();
+  if (name === 'clustermap') onCmapShow();
   if (name === 'genequery')  GeneQuery.onShow();
   if (name === 'clusters')   Clusters.onShow();
   if (name === 'panel')      Panel.onShow();
@@ -64,8 +69,8 @@ const MDE = (() => {
 
   let fitnessCache = null;
   let signaturesCache = null;
-  function ensureFitness()    { return fitnessCache    || (fitnessCache    = fetch('data/mde/fitness.json?v=25').then(r => r.json())); }
-  function ensureSignatures() { return signaturesCache || (signaturesCache = fetch('data/mde/signatures.json?v=25').then(r => r.json())); }
+  function ensureFitness()    { return fitnessCache    || (fitnessCache    = fetch('data/mde/fitness.json?v=26').then(r => r.json())); }
+  function ensureSignatures() { return signaturesCache || (signaturesCache = fetch('data/mde/signatures.json?v=26').then(r => r.json())); }
 
   let data = [];
   let leidenLabels = {}, hdbscanLabels = {};
@@ -350,7 +355,7 @@ const MDE = (() => {
   }
 
   function init() {
-    return fetch('data/mde.json?v=25').then(r => r.json()).then(payload => {
+    return fetch('data/mde.json?v=26').then(r => r.json()).then(payload => {
       data = payload.points;
       leidenLabels  = payload.leiden_labels  || {};
       hdbscanLabels = payload.hdbscan_labels || {};
@@ -689,9 +694,9 @@ const Clustermap = makeClustermap({
   mainId:   'cmap-main', sideId:   'cmap-side',
   searchId: 'csearch',   suggestId:'csuggest',
   hintId:   'chint',     metaId:   'cmeta',     resetId: 'creset',
-  metaPath: 'data/clustermap/meta.json?v=25',
-  mainPath: 'data/clustermap/corr_int8.bin?v=25',
-  sidePath: 'data/clustermap/corr_side_int8.bin?v=25',
+  metaPath: 'data/clustermap/meta.json?v=26',
+  mainPath: 'data/clustermap/corr_int8.bin?v=26',
+  sidePath: 'data/clustermap/corr_side_int8.bin?v=26',
   mainZmin: -0.2, mainZmax: 0.2,
   sideZmin: -0.5, sideZmax: 0.5,
 });
@@ -702,9 +707,9 @@ const GeneClustermap = makeClustermap({
   mainId:   'gmap-main', sideId:   'gmap-side',
   searchId: 'gsearch',   suggestId:'gsuggest',
   hintId:   'ghint',     metaId:   'gmeta',     resetId: 'greset',
-  metaPath: 'data/genemap/meta.json?v=25',
-  mainPath: 'data/genemap/gene_corr_int8.bin?v=25',
-  sidePath: 'data/genemap/gene_corr_side_int8.bin?v=25',
+  metaPath: 'data/genemap/meta.json?v=26',
+  mainPath: 'data/genemap/gene_corr_int8.bin?v=26',
+  sidePath: 'data/genemap/gene_corr_side_int8.bin?v=26',
   mainZmin: -0.2, mainZmax: 0.2,
   sideZmin: -0.5, sideZmax: 0.5,
 });
@@ -730,14 +735,15 @@ const GeneQuery = (() => {
 
   const MODES = {
     gene: {
-      indexPath: 'data/genes/index.json?v=25',
-      topkPath:  'data/genes/topk.json?v=25',
+      indexPath: 'data/genes/index.json?v=26',
+      topkPath:  'data/genes/topk.json?v=26',
       indexKey:  'genes',       // index.json key holding the searchable list
       counterKey:'n_perts',     // index.json key for the "other-axis" size
-      entity:    'gene',
+      entity:    'feature gene',
       other:     'perturbations',
-      placeholder: 'Search expressed gene…',
-      hintHtml:  '<p>Pick an expressed <strong>gene</strong> to see the perturbations that most strongly <strong>up-regulate</strong> or <strong>down-regulate</strong> it (NTC z-score, post-basic-QC universe of all perturbations).</p>',
+      titlePrefix: 'Feature Gene: ',
+      placeholder: 'Search feature gene…',
+      hintHtml:  '<p>Pick a <strong>feature gene</strong> to see the perturbations that most strongly <strong>up-regulate</strong> or <strong>down-regulate</strong> it (NTC z-score, post-basic-QC universe of all perturbations).</p>',
       upHeader:  'Top 50 perturbations · highest z-score',
       dnHeader:  'Top 50 perturbations · lowest z-score',
       axisX:     'NTC z-score',
@@ -746,14 +752,15 @@ const GeneQuery = (() => {
       defaultPick: 'POU5F1',
     },
     pert: {
-      indexPath: 'data/perts/index.json?v=25',
-      topkPath:  'data/perts/topk.json?v=25',
+      indexPath: 'data/perts/index.json?v=26',
+      topkPath:  'data/perts/topk.json?v=26',
       indexKey:  'perts',
       counterKey:'n_genes',
-      entity:    'perturbation',
+      entity:    'perturbed gene',
       other:     'genes',
-      placeholder: 'Search perturbation…',
-      hintHtml:  '<p>Pick a <strong>perturbation</strong> to see the genes it most strongly <strong>up-regulates</strong> or <strong>down-regulates</strong> (NTC z-score across expressed genes).</p>',
+      titlePrefix: 'Perturbed Gene: ',
+      placeholder: 'Search perturbed gene…',
+      hintHtml:  '<p>Pick a <strong>perturbed gene</strong> (CRISPRi knockdown target) to see the genes it most strongly <strong>up-regulates</strong> or <strong>down-regulates</strong> (NTC z-score across expressed genes).</p>',
       upHeader:  'Top 50 genes · highest z-score',
       dnHeader:  'Top 50 genes · lowest z-score',
       axisX:     'NTC z-score',
@@ -946,7 +953,7 @@ const GeneQuery = (() => {
     closeSuggest();
     HINT.hidden = true;
     RESULTS.hidden = false;
-    GENE.textContent = key;
+    GENE.textContent = c.titlePrefix + key;
     SUB.textContent = 'loading…';
     fillTable(UP, []); fillTable(DN, []);
     const modeAtCall = mode;
@@ -1080,7 +1087,7 @@ const Clusters = (() => {
   function ensureData() {
     if (loaded) return loaded;
     META.textContent = 'Loading cluster summaries…';
-    loaded = fetch('data/clusters/summary.json?v=25').then(r => r.json()).then(d => {
+    loaded = fetch('data/clusters/summary.json?v=26').then(r => r.json()).then(d => {
       data = d;
       META.textContent = meta();
       return d;
@@ -1192,100 +1199,176 @@ const Clusters = (() => {
 // Gene panel tab — user picks up to 10 genes, see mean z across clusters
 // ============================================================================
 const Panel = (() => {
-  const MAX_GENES = 10;
-  const SEARCH = document.getElementById('psearch');
-  const SUG    = document.getElementById('psuggest');
-  const CHIPS  = document.getElementById('pchips');
-  const CLEAR  = document.getElementById('pclear');
+  const MAX = 10;
+  const ZMAX = 0.5;                             // viz z scale ±0.5
+  const DEFAULT_FEATURES = ['POU5F1','NANOG','SOX2','PRDM14','ZFP42','FZD8','SHISA2','PRDM1','OTX2'];
+  const DEFAULT_PERTS    = ['POU3F2','PSMD8','POU5F1','RNF7','MARVELD1'];
+
   const META   = document.getElementById('pmeta');
   const HINT   = document.getElementById('pn-hint');
   const PLOT   = document.getElementById('pn-plot');
+  const PERTS_PICKER = document.getElementById('pn-perts-picker');
+  const GS     = {  // "gene slot" — feature gene picker
+    input:  document.getElementById('psearch-gene'),
+    sug:    document.getElementById('psuggest-gene'),
+    chips:  document.getElementById('pchips-gene'),
+  };
+  const PS     = {  // "pert slot" — perturbation picker
+    input:  document.getElementById('psearch-pert'),
+    sug:    document.getElementById('psuggest-pert'),
+    chips:  document.getElementById('pchips-pert'),
+  };
 
-  let meta = null;                  // { scale, genes, leiden:[{id,label,n}], hdbscan:[...] }
-  let matrix = null;                // Int8Array, row-major (n_clusters x n_genes)
-  let nL = 0, nH = 0;               // rows per type (leiden then hdbscan)
-  let geneIdx = new Map();          // gene -> row index
-  let geneLower = [];               // lowercase gene list for search
-  let picked = [];                  // ['GENE1', ...]
-  let ptype = 'leiden';
-  let loaded = null;
-  let activeSugg = -1;
+  // Per-pert matrix
+  let pmMeta = null;                            // {scale, perts, genes, n_perts, n_genes}
+  let pmMatrix = null;                          // Int8Array row-major (n_perts x n_genes)
+  let pmLoaded = null;
+  // Cluster-aggregated matrix
+  let clMeta = null;                            // {scale, genes, leiden, hdbscan, n_genes}
+  let clMatrix = null;                          // Int8Array row-major (nL+nH x n_genes)
+  let clLoaded = null;
 
-  function ensure() {
-    if (loaded) return loaded;
-    META.textContent = 'Loading cluster means…';
-    loaded = Promise.all([
-      fetch('data/clusters/means_meta.json?v=25').then(r => r.json()),
-      fetch('data/clusters/means.bin?v=25').then(r => r.arrayBuffer()),
+  // Lookup maps (populated after pmMeta loads)
+  const geneIdx  = new Map();
+  const pertIdx  = new Map();
+  let geneLower  = [];
+  let pertLower  = [];
+
+  let pickedGenes  = [];
+  let pickedPerts  = [];
+  let axis         = 'perts';                   // 'perts' | 'clusters'
+  let activeSugG = -1, activeSugP = -1;
+  let populated  = false;                       // defaults seeded on first show
+
+  function ensurePertMeans() {
+    if (pmLoaded) return pmLoaded;
+    META.textContent = 'Loading per-perturbation z-score matrix…';
+    pmLoaded = Promise.all([
+      fetch('data/panel/pert_means_meta.json?v=26').then(r => r.json()),
+      fetch('data/panel/pert_means.bin?v=26').then(r => r.arrayBuffer()),
     ]).then(([m, buf]) => {
-      meta = m;
-      nL = meta.leiden.length;
-      nH = meta.hdbscan.length;
-      matrix = new Int8Array(buf);
-      meta.genes.forEach((g, i) => geneIdx.set(g, i));
-      geneLower = meta.genes.map(g => g.toLowerCase());
-      META.textContent = `${meta.genes.length.toLocaleString()} genes · Leiden ${nL} · HDBSCAN ${nH}`;
+      pmMeta = m;
+      pmMatrix = new Int8Array(buf);
+      pmMeta.genes.forEach((g, i) => geneIdx.set(g, i));
+      pmMeta.perts.forEach((p, i) => pertIdx.set(p, i));
+      geneLower = pmMeta.genes.map(g => g.toLowerCase());
+      pertLower = pmMeta.perts.map(p => p.toLowerCase());
+      refreshMeta();
     }).catch(err => {
-      META.textContent = 'Failed to load.';
+      META.textContent = 'Failed to load per-pert matrix.';
       throw err;
     });
-    return loaded;
+    return pmLoaded;
   }
 
-  function clusterRow(ptypeLocal, i) {
-    // Returns an array of z values for cluster row (leiden i or hdbscan i)
-    const rowStart = (ptypeLocal === 'leiden' ? i : nL + i) * meta.n_genes;
-    return matrix.subarray(rowStart, rowStart + meta.n_genes);
+  function ensureClusterMeans() {
+    if (clLoaded) return clLoaded;
+    clLoaded = Promise.all([
+      fetch('data/clusters/means_meta.json?v=26').then(r => r.json()),
+      fetch('data/clusters/means.bin?v=26').then(r => r.arrayBuffer()),
+    ]).then(([m, buf]) => {
+      clMeta = m;
+      clMatrix = new Int8Array(buf);
+    }).catch(err => {
+      META.textContent = 'Failed to load cluster means.'; throw err;
+    });
+    return clLoaded;
+  }
+
+  function refreshMeta() {
+    if (!pmMeta) return;
+    META.textContent = `${pmMeta.genes.length.toLocaleString()} genes · ${pmMeta.perts.length.toLocaleString()} strong perturbations · z-scale ±${ZMAX}`;
+  }
+
+  function pertRow(i) {
+    return pmMatrix.subarray(i * pmMeta.n_genes, (i + 1) * pmMeta.n_genes);
+  }
+  function clusterRow(hi) {                     // hi = HDBSCAN cluster index (0..nH-1)
+    const nL = clMeta.leiden.length;
+    const ri = nL + hi;
+    return clMatrix.subarray(ri * clMeta.n_genes, (ri + 1) * clMeta.n_genes);
+  }
+
+  // ---------- Rendering ----------
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => (
+      { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  }
+
+  function renderChips() {
+    const fill = (row, list, onRemove) => {
+      row.innerHTML = '';
+      list.forEach(name => {
+        const c = document.createElement('span');
+        c.className = 'chip';
+        c.innerHTML = `${escapeHtml(name)}<span class="x" title="Remove">×</span>`;
+        c.querySelector('.x').addEventListener('click', () => onRemove(name));
+        row.appendChild(c);
+      });
+    };
+    fill(GS.chips, pickedGenes, name => { pickedGenes = pickedGenes.filter(g => g !== name); renderChips(); render(); });
+    fill(PS.chips, pickedPerts, name => { pickedPerts = pickedPerts.filter(p => p !== name); renderChips(); render(); });
   }
 
   function render() {
-    if (!meta) return;
-    if (!picked.length) {
-      HINT.hidden = false; PLOT.hidden = true; CLEAR.hidden = true; Plotly.purge(PLOT); return;
-    }
-    HINT.hidden = true; PLOT.hidden = false; CLEAR.hidden = false;
+    if (!pmMeta) return;
 
-    const clusters = meta[ptype];   // [{id,label,n}, ...] in stored order
-    // Build z matrix rows = genes (picked order), cols = clusters (stored order)
-    const z = picked.map(name => {
-      const gi = geneIdx.get(name);
-      const out = new Array(clusters.length);
-      for (let ci = 0; ci < clusters.length; ci++) {
-        const cellRow = clusterRow(ptype, ci);
-        out[ci] = cellRow[gi] * meta.scale;
-      }
-      return out;
+    // Axis-dependent prep
+    const rows = pickedGenes.slice();           // row keys (feature gene names)
+    let xLabels, colLabels, colZ;               // cols + z lookup per col
+    if (axis === 'perts') {
+      if (!pickedPerts.length || !rows.length) return showHint();
+      xLabels = pickedPerts.slice();
+      colLabels = pickedPerts.map(p => `Perturbation: ${p}`);
+      colZ = pickedPerts.map(p => pertRow(pertIdx.get(p)));
+    } else {
+      // clusters axis — need cluster matrix loaded
+      if (!clMeta || !clMatrix) { ensureClusterMeans().then(render); showHint(); return; }
+      if (!rows.length) return showHint();
+      const hdb = clMeta.hdbscan.slice().sort((a, b) => {
+        if (a.id === -1) return 1; if (b.id === -1) return -1; return a.id - b.id;
+      });
+      xLabels = hdb.map(c => c.id === -1 ? 'noise' : String(c.id));
+      colLabels = hdb.map(c => c.id === -1 ? 'Unclustered' :
+        (c.label ? `Cluster ${c.id} · ${c.label}` : `Cluster ${c.id}`));
+      colZ = hdb.map(c => {
+        const origIdx = clMeta.hdbscan.findIndex(x => x.id === c.id);
+        return clusterRow(origIdx);
+      });
+    }
+
+    HINT.hidden = true; PLOT.hidden = false;
+
+    // Build z matrix (rows x cols) using the per-axis row arrays
+    const scale = axis === 'perts' ? pmMeta.scale : clMeta.scale;
+    const z = rows.map(g => {
+      const gi = geneIdx.get(g);                // indices are consistent across the two matrices (same genes[])
+      return colZ.map(row => row[gi] * scale);
     });
-    const xLabels = clusters.map(c => c.id === -1 ? 'noise' : String(c.id));
-    const clusterLabel = clusters.map(c => c.label && c.label.length
-      ? `Cluster ${c.id} · ${c.label}`
-      : (c.id === -1 ? 'Unclustered' : `Cluster ${c.id}`));
-    // customdata: matching shape of z — repeat the per-column label row per gene
-    const cdata = picked.map(() => clusterLabel);
-    // Color scale RdBu diverging
-    const zmax = 2, zmin = -zmax;
+    const cdata = rows.map(() => colLabels);
     const trace = {
       type: 'heatmap',
-      x: xLabels, y: picked, z,
+      x: xLabels, y: rows, z,
       customdata: cdata,
-      colorscale: 'RdBu', reversescale: true, zmin, zmax,
-      hovertemplate: '<b>%{y}</b> × %{customdata}<br>mean z = %{z:.2f}<extra></extra>',
-      colorbar: { title: { text: 'mean z', font: { size: 10 } }, thickness: 8, len: 0.6,
+      colorscale: 'RdBu', reversescale: true, zmin: -ZMAX, zmax: ZMAX,
+      hovertemplate: '<b>%{y}</b> × %{customdata}<br>mean z = %{z:.3f}<extra></extra>',
+      colorbar: { title: { text: 'z', font: { size: 10 } }, thickness: 8, len: 0.6,
                   tickfont: { size: 10 } },
+      xgap: 1, ygap: 1,
     };
-    const nCols = clusters.length;
-    // Generous height per gene, width follows container
-    const height = Math.max(220, 46 * picked.length + 80);
+    const height = Math.max(220, 44 * rows.length + 90);
     PLOT.style.height = height + 'px';
     const layout = {
-      margin: { l: 88, r: 60, t: 16, b: 54 },
+      margin: { l: 100, r: 60, t: 16, b: 80 },
       xaxis: {
-        title: { text: `${ptype.toUpperCase()} cluster id`, font: { size: 11 } },
+        title: { text: axis === 'perts' ? 'Perturbed gene' : 'HDBSCAN cluster id',
+                 font: { size: 11 } },
         type: 'category', automargin: true,
-        tickfont: { size: 10 }, side: 'bottom',
-        dtick: nCols > 30 ? 2 : 1,
+        tickfont: { size: 11 }, tickangle: axis === 'perts' ? 0 : 0,
+        side: 'bottom',
       },
       yaxis: {
+        title: { text: 'Feature gene', font: { size: 11 } },
         type: 'category', autorange: 'reversed',
         tickfont: { size: 11 }, automargin: true,
       },
@@ -1294,112 +1377,126 @@ const Panel = (() => {
     Plotly.react(PLOT, [trace], layout, {
       responsive: true, displaylogo: false,
       modeBarButtonsToRemove: ['lasso2d','select2d','autoScale2d','toggleSpikelines','zoom2d','pan2d'],
-      toImageButtonOptions: { filename: `KOLF_panel_${ptype}`, scale: 2, format: 'png' },
+      toImageButtonOptions: { filename: `KOLF_panel_${axis}`, scale: 2, format: 'png' },
     });
   }
 
-  function renderChips() {
-    CHIPS.innerHTML = '';
-    picked.forEach(name => {
-      const c = document.createElement('span');
-      c.className = 'chip';
-      c.innerHTML = `${escapeHtml(name)}<span class="x" title="Remove">×</span>`;
-      c.querySelector('.x').addEventListener('click', () => {
-        picked = picked.filter(g => g !== name);
-        renderChips(); render();
-      });
-      CHIPS.appendChild(c);
-    });
+  function showHint() {
+    PLOT.hidden = true; HINT.hidden = false; Plotly.purge(PLOT);
   }
 
-  function addGene(name) {
-    if (!name || !geneIdx.has(name)) return;
-    if (picked.includes(name)) return;
-    if (picked.length >= MAX_GENES) {
-      META.textContent = `Panel is full (${MAX_GENES} max). Remove a gene to add another.`;
-      return;
-    }
-    picked.push(name);
-    renderChips(); render();
-    META.textContent = `${meta.genes.length.toLocaleString()} genes · Leiden ${nL} · HDBSCAN ${nH}`;
-  }
+  // ---------- Suggest (reads module-level geneLower/pertLower at call time) ----------
+  function namesFor(kind) { return kind === 'gene' ? pmMeta.genes : pmMeta.perts; }
+  function lowerFor(kind) { return kind === 'gene' ? geneLower   : pertLower; }
+  function getActive(kind) { return kind === 'gene' ? activeSugG : activeSugP; }
+  function setActive(kind, v) { if (kind === 'gene') activeSugG = v; else activeSugP = v; }
 
-  function updateSuggest(raw) {
-    if (!meta) { SUG.hidden = true; return; }
-    const q = (raw || '').trim().toLowerCase();
-    if (!q) { SUG.hidden = true; activeSugg = -1; return; }
+  function updateSuggest(slot, kind) {
+    if (!pmMeta) return;
+    const q = (slot.input.value || '').trim().toLowerCase();
+    if (!q) { slot.sug.hidden = true; setActive(kind, -1); return; }
+    const lower = lowerFor(kind), names = namesFor(kind);
     const starts = [], contains = [];
-    for (let i = 0; i < geneLower.length; i++) {
-      const gl = geneLower[i];
-      if (gl === q) { starts.unshift(i); continue; }
-      if (gl.startsWith(q)) { starts.push(i); if (starts.length > 30) break; continue; }
-      if (gl.includes(q) && contains.length < 30) contains.push(i);
+    for (let i = 0; i < lower.length; i++) {
+      const s = lower[i];
+      if (s === q) { starts.unshift(i); continue; }
+      if (s.startsWith(q)) { starts.push(i); if (starts.length > 30) break; continue; }
+      if (s.includes(q) && contains.length < 30) contains.push(i);
     }
-    const hits = starts.concat(contains).slice(0, 20).map(i => meta.genes[i]);
-    if (!hits.length) { SUG.hidden = true; return; }
-    SUG.innerHTML = '';
-    hits.forEach((g, i) => {
+    const hits = starts.concat(contains).slice(0, 20).map(i => names[i]);
+    if (!hits.length) { slot.sug.hidden = true; return; }
+    slot.sug.innerHTML = '';
+    hits.forEach((name, i) => {
       const li = document.createElement('li');
-      li.textContent = g;
-      li.dataset.gene = g;
-      if (i === 0) { li.classList.add('active'); activeSugg = 0; }
-      li.addEventListener('mousedown', (e) => { e.preventDefault(); pickSuggest(g); });
-      SUG.appendChild(li);
+      li.textContent = name;
+      li.dataset.item = name;
+      if (i === 0) { li.classList.add('active'); setActive(kind, 0); }
+      li.addEventListener('mousedown', (e) => { e.preventDefault(); pickSuggest(slot, kind, name); });
+      slot.sug.appendChild(li);
     });
-    SUG.hidden = false;
+    slot.sug.hidden = false;
   }
 
-  function pickSuggest(g) {
-    addGene(g);
-    SEARCH.value = '';
-    SUG.hidden = true; activeSugg = -1;
+  function pickSuggest(slot, kind, name) {
+    addPicked(kind, name);
+    slot.input.value = '';
+    slot.sug.hidden = true; setActive(kind, -1);
   }
 
-  function onKey(e) {
-    const items = SUG.querySelectorAll('li');
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      if (items.length && activeSugg >= 0) pickSuggest(items[activeSugg].dataset.gene);
-      else addGene(SEARCH.value.trim().toUpperCase());
-      SEARCH.value = ''; SUG.hidden = true;
-    } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-      if (!items.length) return;
-      e.preventDefault();
-      items[activeSugg >= 0 ? activeSugg : 0].classList.remove('active');
-      activeSugg = (activeSugg + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
-      items[activeSugg].classList.add('active');
-    } else if (e.key === 'Escape') {
-      SUG.hidden = true; activeSugg = -1;
-    }
+  function addPicked(kind, name) {
+    if (!name || !pmMeta) return;
+    name = name.trim();
+    const canon = namesFor(kind).find(x => x.toUpperCase() === name.toUpperCase());
+    if (!canon) return;
+    const arr = kind === 'gene' ? pickedGenes : pickedPerts;
+    if (arr.includes(canon)) return;
+    if (arr.length >= MAX) { META.textContent = `Slot full (${MAX} max).`; return; }
+    arr.push(canon);
+    renderChips(); render(); refreshMeta();
   }
 
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, c => (
-      { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  function wireSlot(slot, kind) {
+    slot.input.addEventListener('input',  () => updateSuggest(slot, kind));
+    slot.input.addEventListener('focus',  () => updateSuggest(slot, kind));
+    slot.input.addEventListener('blur',   () => setTimeout(() => { slot.sug.hidden = true; }, 120));
+    slot.input.addEventListener('keydown', (e) => {
+      const items = slot.sug.querySelectorAll('li');
+      const cur = getActive(kind);
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (items.length && cur >= 0) pickSuggest(slot, kind, items[cur].dataset.item);
+        else pickSuggest(slot, kind, slot.input.value);
+      } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        if (!items.length) return;
+        e.preventDefault();
+        items[cur >= 0 ? cur : 0].classList.remove('active');
+        const next = (cur + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+        items[next].classList.add('active');
+        setActive(kind, next);
+      } else if (e.key === 'Escape') {
+        slot.sug.hidden = true; setActive(kind, -1);
+      }
+    });
   }
 
-  function attach() {
-    SEARCH.addEventListener('input',  () => updateSuggest(SEARCH.value));
-    SEARCH.addEventListener('focus',  () => updateSuggest(SEARCH.value));
-    SEARCH.addEventListener('blur',   () => setTimeout(() => { SUG.hidden = true; }, 120));
-    SEARCH.addEventListener('keydown', onKey);
-    CLEAR.addEventListener('click', () => { picked = []; renderChips(); render(); });
+  function wireAxisToggle() {
     document.querySelectorAll('#view-panel .seg').forEach(btn => {
       btn.addEventListener('click', () => {
+        const newAxis = btn.dataset.paxis;
+        if (newAxis === axis) return;
         document.querySelectorAll('#view-panel .seg').forEach(b => {
           const on = (b === btn);
           b.classList.toggle('active', on);
           b.setAttribute('aria-checked', on);
         });
-        ptype = btn.dataset.ptype;
-        render();
+        axis = newAxis;
+        PERTS_PICKER.style.opacity = axis === 'clusters' ? '0.45' : '1';
+        PERTS_PICKER.style.pointerEvents = axis === 'clusters' ? 'none' : 'auto';
+        if (axis === 'clusters') ensureClusterMeans().then(render);
+        else render();
       });
     });
   }
 
-  function init() { attach(); }
+  function populateDefaults() {
+    if (populated || !pmMeta) return;
+    populated = true;
+    DEFAULT_FEATURES.forEach(g => { if (pmMeta.genes.includes(g) && !pickedGenes.includes(g)) pickedGenes.push(g); });
+    DEFAULT_PERTS   .forEach(p => { if (pmMeta.perts.includes(p) && !pickedPerts.includes(p)) pickedPerts.push(p); });
+    renderChips(); render();
+  }
+
+  function init() {
+    wireSlot(GS, 'gene');
+    wireSlot(PS, 'pert');
+    wireAxisToggle();
+  }
+
   function onShow() {
-    ensure().then(() => { render(); if (PLOT.offsetWidth) Plotly.Plots.resize(PLOT); });
+    ensurePertMeans().then(() => {
+      populateDefaults();
+      if (PLOT.offsetWidth) Plotly.Plots.resize(PLOT);
+    });
   }
   return { init, onShow };
 })();
@@ -1413,6 +1510,27 @@ GeneClustermap.init();
 GeneQuery.init();
 Clusters.init();
 Panel.init();
+
+// Clustermap subview toggle (pert <-> gene) within the Clustermaps tab
+(function wireClustermapToggle() {
+  const pertView = document.getElementById('cmap-pert-view');
+  const geneView = document.getElementById('cmap-gene-view');
+  document.querySelectorAll('#view-clustermap .cmap-mode-row .seg').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const newMode = btn.dataset.cmode;
+      if (newMode === cmapMode) return;
+      document.querySelectorAll('#view-clustermap .cmap-mode-row .seg').forEach(b => {
+        const on = (b === btn);
+        b.classList.toggle('active', on);
+        b.setAttribute('aria-checked', on);
+      });
+      cmapMode = newMode;
+      pertView.hidden = (cmapMode !== 'pert');
+      geneView.hidden = (cmapMode !== 'gene');
+      onCmapShow();                             // force resize of freshly visible plot
+    });
+  });
+})();
 
 // Initial route
 const initial = location.hash.replace('#', '');

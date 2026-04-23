@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>KOLF2.1J Perturbation Atlas</title>
-  <link rel="stylesheet" href="css/style.css?v=25">
+  <link rel="stylesheet" href="css/style.css?v=26">
   <script src="https://cdn.plot.ly/plotly-cartesian-2.35.2.min.js" charset="utf-8"></script>
 </head>
 <body>
@@ -15,8 +15,7 @@
     </div>
     <nav class="tabs" role="tablist" aria-label="Views">
       <button class="tab active" role="tab" aria-selected="true"  data-tab="mde">MDE</button>
-      <button class="tab"        role="tab" aria-selected="false" data-tab="clustermap">Pert clustermap</button>
-      <button class="tab"        role="tab" aria-selected="false" data-tab="genemap">Gene clustermap</button>
+      <button class="tab"        role="tab" aria-selected="false" data-tab="clustermap">Clustermaps</button>
       <button class="tab"        role="tab" aria-selected="false" data-tab="genequery">Gene query</button>
       <button class="tab"        role="tab" aria-selected="false" data-tab="clusters">Clusters</button>
       <button class="tab"        role="tab" aria-selected="false" data-tab="panel">Gene panel</button>
@@ -60,49 +59,57 @@
       </div>
     </section>
 
-    <!-- Clustermap view -->
+    <!-- Clustermaps view (strong perts + feature genes in one tab) -->
     <section id="view-clustermap" class="view" role="tabpanel" aria-labelledby="tab-clustermap" hidden>
-      <div class="view-controls">
-        <div class="combo">
-          <input id="csearch" type="search" placeholder="Search perturbation…" autocomplete="off" spellcheck="false">
-          <ul id="csuggest" class="suggest" hidden></ul>
+      <div class="view-controls cmap-mode-row">
+        <div class="toggle" role="radiogroup" aria-label="Clustermap target">
+          <button class="seg active" data-cmode="pert" role="radio" aria-checked="true">Strong perturbations</button>
+          <button class="seg"        data-cmode="gene" role="radio" aria-checked="false">Feature genes</button>
         </div>
-        <span id="cmeta" class="meta"></span>
-        <button id="creset" title="Reset zoom + selection">Reset</button>
       </div>
-      <div class="view-body cmap-body">
-        <div class="cmap-pane">
-          <div class="cmap-title">All 1,655 perturbations · hierarchical clustering</div>
-          <div id="cmap-main" class="cmap-plot"></div>
-        </div>
-        <div class="cmap-pane cmap-pane-narrow">
-          <div class="cmap-title">HDBSCAN clusters only · 314 perts · sorted by cluster id</div>
-          <div id="cmap-side" class="cmap-plot"></div>
-        </div>
-        <div id="chint" class="hint">Loading correlation matrix…</div>
-      </div>
-    </section>
 
-    <!-- Gene clustermap view -->
-    <section id="view-genemap" class="view" role="tabpanel" hidden>
-      <div class="view-controls">
-        <div class="combo">
-          <input id="gsearch" type="search" placeholder="Search gene…" autocomplete="off" spellcheck="false">
-          <ul id="gsuggest" class="suggest" hidden></ul>
+      <div id="cmap-pert-view" class="cmap-subview">
+        <div class="view-controls">
+          <div class="combo">
+            <input id="csearch" type="search" placeholder="Search perturbation…" autocomplete="off" spellcheck="false">
+            <ul id="csuggest" class="suggest" hidden></ul>
+          </div>
+          <span id="cmeta" class="meta"></span>
+          <button id="creset" title="Reset zoom + selection">Reset</button>
         </div>
-        <span id="gmeta" class="meta"></span>
-        <button id="greset" title="Reset zoom">Reset</button>
+        <div class="view-body cmap-body">
+          <div class="cmap-pane">
+            <div class="cmap-title">All 1,655 perturbations · hierarchical clustering</div>
+            <div id="cmap-main" class="cmap-plot"></div>
+          </div>
+          <div class="cmap-pane cmap-pane-narrow">
+            <div class="cmap-title">HDBSCAN clusters only · 314 perts · sorted by cluster id</div>
+            <div id="cmap-side" class="cmap-plot"></div>
+          </div>
+          <div id="chint" class="hint">Loading correlation matrix…</div>
+        </div>
       </div>
-      <div class="view-body cmap-body">
-        <div class="cmap-pane">
-          <div class="cmap-title">All 2,189 feature genes · hierarchical clustering</div>
-          <div id="gmap-main" class="cmap-plot"></div>
+
+      <div id="cmap-gene-view" class="cmap-subview" hidden>
+        <div class="view-controls">
+          <div class="combo">
+            <input id="gsearch" type="search" placeholder="Search gene…" autocomplete="off" spellcheck="false">
+            <ul id="gsuggest" class="suggest" hidden></ul>
+          </div>
+          <span id="gmeta" class="meta"></span>
+          <button id="greset" title="Reset zoom">Reset</button>
         </div>
-        <div class="cmap-pane cmap-pane-narrow">
-          <div class="cmap-title">HDBSCAN gene clusters only · 1,140 genes · sorted by cluster id</div>
-          <div id="gmap-side" class="cmap-plot"></div>
+        <div class="view-body cmap-body">
+          <div class="cmap-pane">
+            <div class="cmap-title">All 2,189 feature genes · hierarchical clustering</div>
+            <div id="gmap-main" class="cmap-plot"></div>
+          </div>
+          <div class="cmap-pane cmap-pane-narrow">
+            <div class="cmap-title">HDBSCAN gene clusters only · 1,140 genes · sorted by cluster id</div>
+            <div id="gmap-side" class="cmap-plot"></div>
+          </div>
+          <div id="ghint" class="hint">Loading correlation matrix…</div>
         </div>
-        <div id="ghint" class="hint">Loading correlation matrix…</div>
       </div>
     </section>
 
@@ -110,18 +117,18 @@
     <section id="view-genequery" class="view" role="tabpanel" hidden>
       <div class="view-controls">
         <div class="toggle" role="radiogroup" aria-label="Query mode">
-          <button class="seg active" data-qmode="gene" role="radio" aria-checked="true">Per gene</button>
-          <button class="seg"        data-qmode="pert" role="radio" aria-checked="false">Per perturbation</button>
+          <button class="seg active" data-qmode="gene" role="radio" aria-checked="true">Per Feature Gene</button>
+          <button class="seg"        data-qmode="pert" role="radio" aria-checked="false">Per Perturbed Gene</button>
         </div>
         <div class="combo">
-          <input id="qsearch" type="search" placeholder="Search expressed gene…" autocomplete="off" spellcheck="false">
+          <input id="qsearch" type="search" placeholder="Search feature gene…" autocomplete="off" spellcheck="false">
           <ul id="qsuggest" class="suggest" hidden></ul>
         </div>
         <span id="qmeta" class="meta">Loading…</span>
       </div>
       <div class="view-body gq-body">
         <div id="qhint" class="placeholder">
-          <p>Pick an expressed gene to see the perturbations that most strongly <strong>up-regulate</strong> or <strong>down-regulate</strong> it (NTC z-score, post-basic-QC universe of all perturbations).</p>
+          <p>Pick an expressed <strong>feature gene</strong> to see the perturbations that most strongly <strong>up-regulate</strong> or <strong>down-regulate</strong> it (NTC z-score, post-basic-QC universe of all perturbations).</p>
         </div>
         <div id="qresults" hidden>
           <h2 id="q-gene">—</h2>
@@ -180,22 +187,33 @@
     <!-- Gene panel view -->
     <section id="view-panel" class="view" role="tabpanel" aria-labelledby="tab-panel" hidden>
       <div class="view-controls">
-        <div class="toggle" role="radiogroup" aria-label="Cluster type">
-          <button class="seg active" data-ptype="leiden"  role="radio" aria-checked="true">Leiden</button>
-          <button class="seg"        data-ptype="hdbscan" role="radio" aria-checked="false">HDBSCAN</button>
+        <div class="toggle" role="radiogroup" aria-label="Column axis">
+          <button class="seg active" data-paxis="perts"    role="radio" aria-checked="true">Picked perturbations</button>
+          <button class="seg"        data-paxis="clusters" role="radio" aria-checked="false">HDBSCAN clusters</button>
         </div>
-        <div class="combo">
-          <input id="psearch" type="search" placeholder="Add gene to panel (up to 10)…" autocomplete="off" spellcheck="false">
-          <ul id="psuggest" class="suggest" hidden></ul>
-        </div>
-        <button id="pclear" class="mini" hidden>Clear panel</button>
         <span id="pmeta" class="meta">Loading…</span>
       </div>
       <div class="view-body pn-body">
-        <div id="pchips" class="chip-row"></div>
-        <div id="pn-hint" class="placeholder">
-          <p>Add up to 10 genes to see their <strong>mean NTC z-score</strong> across all strong-perturbation clusters (heatmap rows = genes, cols = clusters).</p>
-          <p>Toggle Leiden / HDBSCAN above. Hover a cell for the cluster label and precise z.</p>
+        <div class="pn-pickers">
+          <div class="pn-picker">
+            <label class="pn-pick-label">Feature genes <span class="muted-tag">rows · up to 10</span></label>
+            <div class="combo">
+              <input id="psearch-gene" type="search" placeholder="Add feature gene…" autocomplete="off" spellcheck="false">
+              <ul id="psuggest-gene" class="suggest" hidden></ul>
+            </div>
+            <div id="pchips-gene" class="chip-row"></div>
+          </div>
+          <div class="pn-picker" id="pn-perts-picker">
+            <label class="pn-pick-label">Perturbed genes <span class="muted-tag">cols · up to 10 strong perts</span></label>
+            <div class="combo">
+              <input id="psearch-pert" type="search" placeholder="Add strong perturbation…" autocomplete="off" spellcheck="false">
+              <ul id="psuggest-pert" class="suggest" hidden></ul>
+            </div>
+            <div id="pchips-pert" class="chip-row"></div>
+          </div>
+        </div>
+        <div id="pn-hint" class="placeholder" hidden>
+          <p>Pick feature genes (rows) and strong perturbations (cols) to see each pairwise mean NTC z-score. Switch the column axis to <strong>HDBSCAN clusters</strong> for a cluster-aggregated view.</p>
         </div>
         <div id="pn-plot" class="pn-plot" hidden></div>
       </div>
@@ -206,6 +224,6 @@
     <span><a href="https://doi.org/10.1101/2024.11.03.621734" target="_blank" rel="noopener">Doctor et&nbsp;al., bioRxiv 2024</a> · <a href="https://github.com/y-doctor/KOLF2.1J_Perturbation_Cell_Atlas" target="_blank" rel="noopener">source</a></span>
   </footer>
 
-  <script src="js/main.js?v=25"></script>
+  <script src="js/main.js?v=26"></script>
 </body>
 </html>
