@@ -65,8 +65,8 @@ const MDE = (() => {
 
   let fitnessCache = null;
   let signaturesCache = null;
-  function ensureFitness()    { return fitnessCache    || (fitnessCache    = fetch('data/mde/fitness.json?v=16').then(r => r.json())); }
-  function ensureSignatures() { return signaturesCache || (signaturesCache = fetch('data/mde/signatures.json?v=16').then(r => r.json())); }
+  function ensureFitness()    { return fitnessCache    || (fitnessCache    = fetch('data/mde/fitness.json?v=18').then(r => r.json())); }
+  function ensureSignatures() { return signaturesCache || (signaturesCache = fetch('data/mde/signatures.json?v=18').then(r => r.json())); }
 
   let data = [];
   let leidenLabels = {}, hdbscanLabels = {};
@@ -355,7 +355,7 @@ const MDE = (() => {
   }
 
   function init() {
-    return fetch('data/mde.json?v=16').then(r => r.json()).then(payload => {
+    return fetch('data/mde.json?v=18').then(r => r.json()).then(payload => {
       data = payload.points;
       leidenLabels  = payload.leiden_labels  || {};
       hdbscanLabels = payload.hdbscan_labels || {};
@@ -704,9 +704,9 @@ const Clustermap = makeClustermap({
   mainId:   'cmap-main', sideId:   'cmap-side',
   searchId: 'csearch',   suggestId:'csuggest',
   hintId:   'chint',     metaId:   'cmeta',     resetId: 'creset',
-  metaPath: 'data/clustermap/meta.json?v=16',
-  mainPath: 'data/clustermap/corr_int8.bin?v=16',
-  sidePath: 'data/clustermap/corr_side_int8.bin?v=16',
+  metaPath: 'data/clustermap/meta.json?v=18',
+  mainPath: 'data/clustermap/corr_int8.bin?v=18',
+  sidePath: 'data/clustermap/corr_side_int8.bin?v=18',
   mainZmin: -0.2, mainZmax: 0.2,
   sideZmin: -0.5, sideZmax: 0.5,
 });
@@ -717,9 +717,9 @@ const GeneClustermap = makeClustermap({
   mainId:   'gmap-main', sideId:   'gmap-side',
   searchId: 'gsearch',   suggestId:'gsuggest',
   hintId:   'ghint',     metaId:   'gmeta',     resetId: 'greset',
-  metaPath: 'data/genemap/meta.json?v=16',
-  mainPath: 'data/genemap/gene_corr_int8.bin?v=16',
-  sidePath: 'data/genemap/gene_corr_side_int8.bin?v=16',
+  metaPath: 'data/genemap/meta.json?v=18',
+  mainPath: 'data/genemap/gene_corr_int8.bin?v=18',
+  sidePath: 'data/genemap/gene_corr_side_int8.bin?v=18',
   mainZmin: -0.2, mainZmax: 0.2,
   sideZmin: -0.5, sideZmax: 0.5,
 });
@@ -736,21 +736,26 @@ const GeneQuery = (() => {
   const RESULTS= document.getElementById('qresults');
   const GENE   = document.getElementById('q-gene');
   const SUB    = document.getElementById('q-sub');
+  const HIST   = document.getElementById('q-hist');
   const UP     = document.getElementById('q-up');
   const DN     = document.getElementById('q-dn');
 
   let genes = [];
   let nPerts = 0, K = 25;
+  let binCenters = [];
+  let binEdges = [];
   let topk = null;          // lazy-loaded big payload
   let topkLoading = null;
   let activeSugg = -1;
   let pendingPick = null;   // gene to render after topk lands
 
   function init() {
-    return fetch('data/genes/index.json?v=16').then(r => r.json()).then(idx => {
-      genes  = idx.genes || [];
-      nPerts = idx.n_perts;
-      K      = idx.k || 25;
+    return fetch('data/genes/index.json?v=18').then(r => r.json()).then(idx => {
+      genes      = idx.genes || [];
+      nPerts     = idx.n_perts;
+      K          = idx.k || 25;
+      binCenters = idx.bin_centers || [];
+      binEdges   = idx.bin_edges   || [];
       META.textContent = `${genes.length.toLocaleString()} expressed genes · ${nPerts.toLocaleString()} perturbations`;
       attachEvents();
     }).catch(err => {
@@ -763,7 +768,7 @@ const GeneQuery = (() => {
     if (topk) return Promise.resolve(topk);
     if (topkLoading) return topkLoading;
     META.textContent = 'Loading per-gene query data (~17 MB)…';
-    topkLoading = fetch('data/genes/topk.json?v=16').then(r => r.json()).then(data => {
+    topkLoading = fetch('data/genes/topk.json?v=18').then(r => r.json()).then(data => {
       topk = data;
       META.textContent = `${genes.length.toLocaleString()} genes · ${nPerts.toLocaleString()} perts`;
       return topk;
@@ -859,13 +864,67 @@ const GeneQuery = (() => {
       if (!entry) {
         SUB.textContent = 'no data';
         fillTable(UP, []); fillTable(DN, []);
+        Plotly.purge(HIST);
         return;
       }
       SUB.textContent = `top ${K} perts up · top ${K} perts down · NTC z-score across ${nPerts.toLocaleString()} perts`;
+      renderHist(g, entry);
       fillTable(UP, entry.up);
       fillTable(DN, entry.dn);
     }).catch(err => {
       SUB.textContent = `load failed: ${err.message || err}`;
+    });
+  }
+
+  function renderHist(gene, entry) {
+    if (!entry.h || !binCenters.length) { Plotly.purge(HIST); return; }
+    const counts = entry.h;
+    // Color bars by sign (red for positive, blue for negative, gray near zero)
+    const colors = binCenters.map(c =>
+      c >= 0.25 ? '#d62728' : (c <= -0.25 ? '#1f77b4' : '#bbb')
+    );
+    // Threshold lines at the 25th highest / 25th lowest pert z values
+    const upZ = entry.up && entry.up.length ? entry.up[entry.up.length - 1][1] : null;
+    const dnZ = entry.dn && entry.dn.length ? entry.dn[entry.dn.length - 1][1] : null;
+    const shapes = [];
+    if (upZ != null) shapes.push({
+      type: 'line', xref: 'x', yref: 'paper', x0: upZ, x1: upZ, y0: 0, y1: 1,
+      line: { color: '#d62728', width: 1, dash: 'dot' },
+    });
+    if (dnZ != null) shapes.push({
+      type: 'line', xref: 'x', yref: 'paper', x0: dnZ, x1: dnZ, y0: 0, y1: 1,
+      line: { color: '#1f77b4', width: 1, dash: 'dot' },
+    });
+    const annotations = [];
+    if (upZ != null) annotations.push({
+      x: upZ, y: 1, xref: 'x', yref: 'paper', text: `top 25 ≥ ${upZ.toFixed(2)}`,
+      showarrow: false, font: { size: 10, color: '#d62728' },
+      xanchor: 'left', yanchor: 'top', xshift: 4, yshift: -2,
+    });
+    if (dnZ != null) annotations.push({
+      x: dnZ, y: 1, xref: 'x', yref: 'paper', text: `bottom 25 ≤ ${dnZ.toFixed(2)}`,
+      showarrow: false, font: { size: 10, color: '#1f77b4' },
+      xanchor: 'right', yanchor: 'top', xshift: -4, yshift: -2,
+    });
+    Plotly.react(HIST, [{
+      type: 'bar',
+      x: binCenters, y: counts,
+      marker: { color: colors, line: { width: 0 } },
+      width: binCenters.length > 1 ? (binCenters[1] - binCenters[0]) * 0.9 : 0.2,
+      hovertemplate: 'z ≈ %{x:.2f}<br>%{y} perts<extra></extra>',
+    }], {
+      margin: { l: 50, r: 16, t: 22, b: 38 },
+      xaxis: { title: { text: 'NTC z-score', font: { size: 11 } }, zeroline: true, zerolinecolor: '#bbb' },
+      yaxis: { title: { text: '# perturbations', font: { size: 11 } } },
+      bargap: 0.05,
+      hovermode: 'x',
+      showlegend: false,
+      plot_bgcolor: '#fff', paper_bgcolor: '#fff',
+      shapes, annotations,
+    }, {
+      responsive: true, displaylogo: false,
+      modeBarButtonsToRemove: ['lasso2d','select2d','autoScale2d','toggleSpikelines','zoom2d','pan2d','zoomIn2d','zoomOut2d'],
+      toImageButtonOptions: { filename: `KOLF_query_${gene}`, scale: 2, format: 'png' },
     });
   }
 
