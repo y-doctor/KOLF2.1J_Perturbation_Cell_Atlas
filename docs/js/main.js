@@ -281,7 +281,7 @@ const MDE = (() => {
   }
 
   function init() {
-    return fetch('data/mde.json?v=9').then(r => r.json()).then(payload => {
+    return fetch('data/mde.json?v=10').then(r => r.json()).then(payload => {
       data = payload.points;
       leidenLabels  = payload.leiden_labels  || {};
       hdbscanLabels = payload.hdbscan_labels || {};
@@ -364,9 +364,9 @@ const Clustermap = (() => {
     HINT.hidden = false;
     HINT.textContent = 'Loading correlation matrices (~2.8 MB)…';
     return Promise.all([
-      fetch('data/clustermap/meta.json?v=9').then(r => r.json()),
-      fetch('data/clustermap/corr_int8.bin?v=9').then(r => r.arrayBuffer()),
-      fetch('data/clustermap/corr_side_int8.bin?v=9').then(r => r.arrayBuffer()),
+      fetch('data/clustermap/meta.json?v=10').then(r => r.json()),
+      fetch('data/clustermap/corr_int8.bin?v=10').then(r => r.arrayBuffer()),
+      fetch('data/clustermap/corr_side_int8.bin?v=10').then(r => r.arrayBuffer()),
     ]).then(([m, mainBuf, sideBuf]) => {
       meta  = m;
       perts = m.perts;
@@ -425,8 +425,8 @@ const Clustermap = (() => {
       type: 'heatmap',
       z, x: perts, y: perts,
       xaxis: 'x2', yaxis: 'y',
-      colorscale: 'RdBu', reversescale: true,
-      zmin: -0.5, zmax: 0.5,
+      colorscale: 'RdBu', reversescale: false,   // paper convention: low=red, high=blue
+      zmin: -0.2, zmax: 0.2,                      // tighter dynamic range for main
       hovertemplate: '<b>%{y}</b> × <b>%{x}</b><br>r = %{z:.3f}<extra></extra>',
       colorbar: {
         title: { text: 'Pearson r', font: { size: 10 } },
@@ -437,8 +437,9 @@ const Clustermap = (() => {
     const layout = {
       margin: { l: 12, r: 70, t: 12, b: 12 },
       xaxis:  { domain: [0, 0.025], showticklabels: false, ticks: '', fixedrange: true },
-      xaxis2: { domain: [0.04, 1.0], showticklabels: false, ticks: '' },
-      yaxis:  { showticklabels: false, ticks: '', autorange: 'reversed' },
+      xaxis2: { domain: [0.04, 1.0], showticklabels: false, ticks: '',
+                scaleanchor: 'y', constrain: 'domain' },          // square cells
+      yaxis:  { showticklabels: false, ticks: '', autorange: 'reversed', constrain: 'domain' },
       hovermode: 'closest', showlegend: false, dragmode: 'zoom',
       plot_bgcolor: '#fff', paper_bgcolor: '#fff',
       annotations: [], shapes: [],
@@ -470,8 +471,8 @@ const Clustermap = (() => {
       type: 'heatmap',
       z, x: sideMeta.perts, y: sideMeta.perts,
       xaxis: 'x2', yaxis: 'y',
-      colorscale: 'RdBu', reversescale: true,
-      zmin: -0.5, zmax: 0.5,
+      colorscale: 'RdBu', reversescale: false,   // paper convention
+      zmin: -0.5, zmax: 0.5,                      // wider range for the cluster blocks
       hovertemplate: '<b>%{y}</b> × <b>%{x}</b><br>r = %{z:.3f}<extra></extra>',
       showscale: false,
     };
@@ -491,8 +492,9 @@ const Clustermap = (() => {
     const layout = {
       margin: { l: 12, r: 12, t: 12, b: 12 },
       xaxis:  { domain: [0, 0.04], showticklabels: false, ticks: '', fixedrange: true },
-      xaxis2: { domain: [0.06, 1.0], showticklabels: false, ticks: '' },
-      yaxis:  { showticklabels: false, ticks: '', autorange: 'reversed' },
+      xaxis2: { domain: [0.06, 1.0], showticklabels: false, ticks: '',
+                scaleanchor: 'y', constrain: 'domain' },          // square cells
+      yaxis:  { showticklabels: false, ticks: '', autorange: 'reversed', constrain: 'domain' },
       hovermode: 'closest', showlegend: false, dragmode: 'zoom',
       plot_bgcolor: '#fff', paper_bgcolor: '#fff',
       annotations: [], shapes,
