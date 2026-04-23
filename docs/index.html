@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>KOLF2.1J Perturbation Atlas</title>
-  <link rel="stylesheet" href="css/style.css?v=14">
+  <link rel="stylesheet" href="css/style.css?v=15">
   <script src="https://cdn.plot.ly/plotly-cartesian-2.35.2.min.js" charset="utf-8"></script>
 </head>
 <body>
@@ -43,9 +43,22 @@
               </dd>
               <dt>n DEGs</dt>      <dd id="p-ndegs">—</dd>
               <dt>edist (vs NTC)</dt><dd id="p-edist">—</dd>
+              <dt>fitness</dt>     <dd id="p-fit">—</dd>
             </dl>
             <section>
-              <h3>Nearest neighbors (MDE)</h3>
+              <h3>Top up-regulated genes <span class="muted-tag">averaged signature</span></h3>
+              <table class="degs" id="p-up"><tbody></tbody></table>
+            </section>
+            <section>
+              <h3>Top down-regulated genes <span class="muted-tag">averaged signature</span></h3>
+              <table class="degs" id="p-dn"><tbody></tbody></table>
+            </section>
+            <section>
+              <h3>Similar perturbations <span class="muted-tag">Pearson on z-scores</span></h3>
+              <ol class="neighbors" id="p-sim"></ol>
+            </section>
+            <section>
+              <h3>Nearest neighbors on MDE</h3>
               <ol class="neighbors" id="p-nbr"></ol>
             </section>
           </div>
@@ -120,6 +133,6 @@
     <span><a href="https://doi.org/10.1101/2024.11.03.621734" target="_blank" rel="noopener">Doctor et&nbsp;al., bioRxiv 2024</a> · <a href="https://github.com/y-doctor/KOLF2.1J_Perturbation_Cell_Atlas" target="_blank" rel="noopener">source</a></span>
   </footer>
 
-  <script src="js/main.js?v=14"></script>
+  <script src="js/main.js?v=15"></script>
 </body>
 </html>

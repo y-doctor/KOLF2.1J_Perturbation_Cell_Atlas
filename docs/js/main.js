@@ -54,8 +54,17 @@ const MDE = (() => {
     hdbBtn:  document.getElementById('p-hdb-hl'),
     ndegs:   document.getElementById('p-ndegs'),
     edist:   document.getElementById('p-edist'),
+    fit:     document.getElementById('p-fit'),
+    up:      document.getElementById('p-up').querySelector('tbody'),
+    dn:      document.getElementById('p-dn').querySelector('tbody'),
+    sim:     document.getElementById('p-sim'),
     nbr:     document.getElementById('p-nbr'),
   };
+
+  let fitnessCache = null;
+  let signaturesCache = null;
+  function ensureFitness()    { return fitnessCache    || (fitnessCache    = fetch('data/mde/fitness.json?v=15').then(r => r.json())); }
+  function ensureSignatures() { return signaturesCache || (signaturesCache = fetch('data/mde/signatures.json?v=15').then(r => r.json())); }
 
   let data = [];
   let leidenLabels = {}, hdbscanLabels = {};
@@ -283,7 +292,7 @@ const MDE = (() => {
   }
 
   function init() {
-    return fetch('data/mde.json?v=14').then(r => r.json()).then(payload => {
+    return fetch('data/mde.json?v=15').then(r => r.json()).then(payload => {
       data = payload.points;
       leidenLabels  = payload.leiden_labels  || {};
       hdbscanLabels = payload.hdbscan_labels || {};
@@ -632,9 +641,9 @@ const Clustermap = makeClustermap({
   mainId:   'cmap-main', sideId:   'cmap-side',
   searchId: 'csearch',   suggestId:'csuggest',
   hintId:   'chint',     metaId:   'cmeta',     resetId: 'creset',
-  metaPath: 'data/clustermap/meta.json?v=14',
-  mainPath: 'data/clustermap/corr_int8.bin?v=14',
-  sidePath: 'data/clustermap/corr_side_int8.bin?v=14',
+  metaPath: 'data/clustermap/meta.json?v=15',
+  mainPath: 'data/clustermap/corr_int8.bin?v=15',
+  sidePath: 'data/clustermap/corr_side_int8.bin?v=15',
   mainZmin: -0.2, mainZmax: 0.2,
   sideZmin: -0.5, sideZmax: 0.5,
 });
@@ -645,9 +654,9 @@ const GeneClustermap = makeClustermap({
   mainId:   'gmap-main', sideId:   'gmap-side',
   searchId: 'gsearch',   suggestId:'gsuggest',
   hintId:   'ghint',     metaId:   'gmeta',     resetId: 'greset',
-  metaPath: 'data/genemap/meta.json?v=14',
-  mainPath: 'data/genemap/gene_corr_int8.bin?v=14',
-  sidePath: 'data/genemap/gene_corr_side_int8.bin?v=14',
+  metaPath: 'data/genemap/meta.json?v=15',
+  mainPath: 'data/genemap/gene_corr_int8.bin?v=15',
+  sidePath: 'data/genemap/gene_corr_side_int8.bin?v=15',
   mainZmin: -0.2, mainZmax: 0.2,
   sideZmin: -0.5, sideZmax: 0.5,
 });

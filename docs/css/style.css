@@ -295,6 +295,29 @@ input[type="search"]:focus { border-color: var(--fg); }
 .kv dt { color: var(--muted); }
 .kv dd { margin: 0; color: var(--fg); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
+.muted-tag {
+  margin-left: 6px;
+  font-weight: 400;
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+table.degs {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+table.degs td {
+  padding: 2px 6px;
+  border-bottom: 1px solid #f1f1f1;
+}
+table.degs td:first-child  { color: var(--fg); }
+table.degs td:last-child   { color: var(--muted); text-align: right; }
+table.degs tr:last-child td { border-bottom: 0; }
+
 ol.neighbors {
   list-style: none;
   margin: 6px 0;
