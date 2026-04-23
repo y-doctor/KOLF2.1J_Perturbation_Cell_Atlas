@@ -1,11 +1,11 @@
 /* KOLF2.1J Perturbation Atlas viewer
-   Three tabs: MDE (#mde), Volcano (#volcano), Clusters (#clusters).
+   Three tabs: MDE (#mde), Clustermap (#clustermap), Clusters (#clusters).
 */
 
 // ============================================================================
 // Router
 // ============================================================================
-const TABS = ['mde', 'volcano', 'clusters'];
+const TABS = ['mde', 'clustermap', 'clusters'];
 const tabButtons = document.querySelectorAll('.tab');
 const views      = Object.fromEntries(
   TABS.map(name => [name, document.getElementById(`view-${name}`)])
@@ -26,9 +26,9 @@ function showTab(name) {
   if (location.hash !== `#${name}`) {
     history.replaceState(null, '', `#${name}`);
   }
-  if (name === 'mde')      MDE.onShow();
-  if (name === 'volcano')  Volcano.onShow();
-  if (name === 'clusters') Clusters.onShow();
+  if (name === 'mde')        MDE.onShow();
+  if (name === 'clustermap') Clustermap.onShow();
+  if (name === 'clusters')   Clusters.onShow();
 }
 
 tabButtons.forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
@@ -281,7 +281,7 @@ const MDE = (() => {
   }
 
   function init() {
-    return fetch('data/mde.json?v=7').then(r => r.json()).then(payload => {
+    return fetch('data/mde.json?v=8').then(r => r.json()).then(payload => {
       data = payload.points;
       leidenLabels  = payload.leiden_labels  || {};
       hdbscanLabels = payload.hdbscan_labels || {};
@@ -306,67 +306,109 @@ const MDE = (() => {
 })();
 
 // ============================================================================
-// Volcano tab
+// Clustermap tab — pert × pert Pearson on z-normed pseudobulks,
+// hierarchically clustered, served as int8 binary.
 // ============================================================================
-const Volcano = (() => {
-  const VPLOT   = document.getElementById('vplot');
-  const VHINT   = document.getElementById('vhint');
-  const VSEARCH = document.getElementById('vsearch');
-  const VSUG    = document.getElementById('vsuggest');
-  const VMETA   = document.getElementById('vmeta');
+const Clustermap = (() => {
+  const PLOT   = document.getElementById('cmap-plot');
+  const SEARCH = document.getElementById('csearch');
+  const SUG    = document.getElementById('csuggest');
+  const HINT   = document.getElementById('chint');
+  const META   = document.getElementById('cmeta');
+  const RESET  = document.getElementById('creset');
 
-  let perts = [];
-  let cache = new Map();         // pert -> rows
-  let currentPert = null;
+  let perts = [];                   // ordered pert names (length n)
+  let indexByGene = new Map();      // gene -> row/col index
+  let n = 0;
+  let M = null;                     // Float32Array length n*n
   let plotted = false;
   let activeSugg = -1;
+  let zRange = null;                // initial axis range
+  let highlightAnnotations = [];
+  let highlightShapes = [];
 
   const layout = {
-    margin: { l: 50, r: 12, t: 36, b: 40 },
-    xaxis: { title: 'log2 fold change', zeroline: true, zerolinecolor: '#bbb' },
-    yaxis: { title: '−log10 (adj. p-value)' },
-    hovermode: 'closest', showlegend: false, dragmode: 'pan',
-    plot_bgcolor: '#fff', paper_bgcolor: '#fff', annotations: [],
-    title: { text: '', font: { size: 14 } },
+    margin: { l: 12, r: 90, t: 12, b: 12 },
+    xaxis: { showticklabels: false, ticks: '', constrain: 'domain' },
+    yaxis: { showticklabels: false, ticks: '', autorange: 'reversed', scaleanchor: 'x' },
+    hovermode: 'closest',
+    showlegend: false,
+    dragmode: 'zoom',
+    plot_bgcolor: '#fff', paper_bgcolor: '#fff',
+    annotations: [], shapes: [],
   };
   const config = {
-    responsive: true, displaylogo: false, scrollZoom: true,
-    modeBarButtonsToRemove: ['lasso2d','select2d','autoScale2d','toggleSpikelines'],
-    toImageButtonOptions: { filename: 'KOLF_volcano', scale: 2, format: 'png' },
+    responsive: true, displaylogo: false, scrollZoom: false,
+    modeBarButtonsToRemove: ['lasso2d','select2d','toggleSpikelines'],
+    toImageButtonOptions: { filename: 'KOLF_clustermap', scale: 2, format: 'png' },
   };
 
-  const SIG_ADJ = 0.05;
-  const SIG_LFC = 1.0;     // |L2FC| threshold for "hit"
-  const COL_UP  = '#d62728';
-  const COL_DN  = '#1f77b4';
-  const COL_NS  = '#bbb';
-
   function init() {
-    return fetch('data/volcano/perts.json?v=7').then(r => r.json()).then(idx => {
-      perts = idx.perts || [];
-      VMETA.textContent = `${perts.length} perturbations`;
+    HINT.hidden = false;
+    HINT.textContent = 'Loading correlation matrix (~2.7 MB)…';
+    return Promise.all([
+      fetch('data/clustermap/meta.json?v=8').then(r => r.json()),
+      fetch('data/clustermap/corr_int8.bin?v=8').then(r => r.arrayBuffer()),
+    ]).then(([meta, buf]) => {
+      perts = meta.perts;
+      n = meta.n;
+      const i8 = new Int8Array(buf);
+      if (i8.length !== n * n) {
+        throw new Error(`Binary length ${i8.length} != n^2 (${n*n})`);
+      }
+      const scale = meta.scale || 127;
+      M = new Float32Array(n * n);
+      for (let i = 0; i < i8.length; i++) M[i] = i8[i] / scale;
+      indexByGene = new Map(perts.map((g, i) => [g, i]));
+      META.textContent = `${n} × ${n} perturbations · Pearson r`;
       attachEvents();
+      render();
+      HINT.hidden = true;
     }).catch(err => {
-      VHINT.textContent = `Failed to load volcano index: ${err}`;
+      HINT.textContent = `Failed to load clustermap: ${err.message || err}`;
     });
   }
 
   function onShow() {
-    if (plotted) Plotly.Plots.resize(VPLOT);
-    VSEARCH.focus();
+    if (plotted) Plotly.Plots.resize(PLOT);
+    if (SEARCH) SEARCH.focus();
+  }
+
+  function render() {
+    // Rebuild z as array of Float32 row views (Plotly accepts typed-array rows)
+    const z = new Array(n);
+    for (let i = 0; i < n; i++) z[i] = M.subarray(i * n, (i + 1) * n);
+
+    const trace = {
+      type: 'heatmap',
+      z,
+      x: perts, y: perts,
+      colorscale: 'RdBu', reversescale: true,
+      zmin: -0.5, zmax: 0.5,
+      hovertemplate: '<b>%{y}</b> × <b>%{x}</b><br>r = %{z:.3f}<extra></extra>',
+      colorbar: {
+        title: { text: 'Pearson r', font: { size: 11 } },
+        thickness: 8, len: 0.5, x: 1.02, xanchor: 'left',
+        tickfont: { size: 10 },
+      },
+    };
+    Plotly.react(PLOT, [trace], layout, config);
+    plotted = true;
+    zRange = null;  // will capture after first relayout below if needed
   }
 
   function attachEvents() {
-    VSEARCH.addEventListener('input',  () => updateSuggest(VSEARCH.value));
-    VSEARCH.addEventListener('focus',  () => updateSuggest(VSEARCH.value));
-    VSEARCH.addEventListener('blur',   () => setTimeout(closeSuggest, 120));
-    VSEARCH.addEventListener('keydown', onSearchKey);
+    SEARCH.addEventListener('input',   () => updateSuggest(SEARCH.value));
+    SEARCH.addEventListener('focus',   () => updateSuggest(SEARCH.value));
+    SEARCH.addEventListener('blur',    () => setTimeout(closeSuggest, 120));
+    SEARCH.addEventListener('keydown', onSearchKey);
+    RESET.addEventListener('click', resetView);
   }
 
   function fuzzy(query) {
     const q = query.trim().toUpperCase();
     if (!q) return perts.slice(0, 12);
-    const eq = perts.filter(p => p.toUpperCase() === q);
+    const eq  = perts.filter(p => p.toUpperCase() === q);
     const pre = perts.filter(p => p.toUpperCase().startsWith(q) && p.toUpperCase() !== q);
     const sub = perts.filter(p => !p.toUpperCase().startsWith(q) && p.toUpperCase().includes(q));
     return [...eq, ...pre, ...sub].slice(0, 12);
@@ -375,30 +417,29 @@ const Volcano = (() => {
   function updateSuggest(q) {
     const list = fuzzy(q);
     if (!list.length) { closeSuggest(); return; }
-    VSUG.innerHTML = '';
-    list.forEach((p, i) => {
+    SUG.innerHTML = '';
+    list.forEach(p => {
       const li = document.createElement('li');
-      // highlight the matched substring
       const idx = q ? p.toUpperCase().indexOf(q.trim().toUpperCase()) : -1;
       if (idx >= 0 && q.trim()) {
-        const before = p.slice(0, idx);
+        const a = p.slice(0, idx);
         const m = p.slice(idx, idx + q.trim().length);
-        const after = p.slice(idx + q.trim().length);
-        li.innerHTML = `${before}<mark>${m}</mark>${after}`;
+        const z = p.slice(idx + q.trim().length);
+        li.innerHTML = `${a}<mark>${m}</mark>${z}`;
       } else {
         li.textContent = p;
       }
       li.addEventListener('mousedown', e => { e.preventDefault(); selectPert(p); });
-      VSUG.appendChild(li);
+      SUG.appendChild(li);
     });
     activeSugg = -1;
-    VSUG.hidden = false;
+    SUG.hidden = false;
   }
-  function closeSuggest() { VSUG.hidden = true; activeSugg = -1; }
+  function closeSuggest() { SUG.hidden = true; activeSugg = -1; }
 
   function onSearchKey(e) {
-    if (VSUG.hidden) return;
-    const items = VSUG.querySelectorAll('li');
+    if (SUG.hidden) return;
+    const items = SUG.querySelectorAll('li');
     if (e.key === 'ArrowDown') {
       e.preventDefault();
       activeSugg = Math.min(items.length - 1, activeSugg + 1);
@@ -420,98 +461,46 @@ const Volcano = (() => {
   }
 
   function selectPert(p) {
-    if (!perts.includes(p)) return;
-    VSEARCH.value = p;
+    const idx = indexByGene.get(p);
+    if (idx == null) return;
+    SEARCH.value = p;
     closeSuggest();
-    if (p === currentPert) return;
-    currentPert = p;
-    loadAndRender(p);
-  }
-
-  function loadAndRender(p) {
-    VHINT.textContent = `Loading ${p}…`;
-    VHINT.hidden = false;
-    const fetchRows = cache.has(p)
-      ? Promise.resolve(cache.get(p))
-      : fetch(`data/volcano/${encodeURIComponent(p)}.json?v=7`).then(r => r.json())
-          .then(rows => { cache.set(p, rows); return rows; });
-    fetchRows.then(rows => render(p, rows)).catch(err => {
-      VHINT.textContent = `Failed to load ${p}: ${err}`;
+    // Crosshair shapes through the row/column
+    highlightShapes = [
+      { type: 'line', xref: 'paper', x0: 0, x1: 1, y0: idx, y1: idx,
+        line: { color: '#111', width: 1, dash: 'dot' } },
+      { type: 'line', yref: 'paper', x0: idx, x1: idx, y0: 0, y1: 1,
+        line: { color: '#111', width: 1, dash: 'dot' } },
+    ];
+    highlightAnnotations = [
+      { x: idx, y: 0, xref: 'x', yref: 'paper',
+        text: p, showarrow: false, yanchor: 'bottom', yshift: 4,
+        font: { size: 11, color: '#111' },
+        bgcolor: 'rgba(255,255,255,0.85)', bordercolor: '#111',
+        borderwidth: 1, borderpad: 2 },
+    ];
+    Plotly.relayout(PLOT, {
+      shapes: highlightShapes,
+      annotations: highlightAnnotations,
+    });
+    // Zoom to a window of ±60 around the picked pert
+    const W = 60;
+    const x0 = Math.max(0, idx - W);
+    const x1 = Math.min(n - 1, idx + W);
+    Plotly.relayout(PLOT, {
+      'xaxis.range': [x0, x1],
+      'yaxis.range': [x1, x0],   // y reversed
     });
   }
 
-  function render(pert, rows) {
-    if (!rows || rows.length === 0) {
-      VHINT.textContent = `No DEGs for ${pert}.`;
-      VHINT.hidden = false;
-      Plotly.purge(VPLOT);
-      plotted = false;
-      return;
-    }
-    VHINT.hidden = true;
-
-    // y = -log10(adj+eps); cap at 30 for display sanity
-    const eps = 1e-300;
-    const x = new Array(rows.length);
-    const y = new Array(rows.length);
-    const text = new Array(rows.length);
-    const color = new Array(rows.length);
-    let maxY = 0;
-    for (let i = 0; i < rows.length; i++) {
-      const r = rows[i];
-      x[i] = r.lfc;
-      const ny = -Math.log10(Math.max(r.adj, eps));
-      y[i] = Math.min(ny, 30);
-      text[i] = r.g;
-      const sig = r.adj <= SIG_ADJ && Math.abs(r.lfc) >= SIG_LFC;
-      color[i] = sig ? (r.lfc > 0 ? COL_UP : COL_DN) : COL_NS;
-      if (y[i] > maxY) maxY = y[i];
-    }
-
-    // Top labels: top 8 up + top 8 down by combined |lfc| * -log10(adj)
-    const idxs = rows.map((r,i) => i);
-    idxs.sort((a,b) => {
-      const sa = Math.abs(rows[a].lfc) * (-Math.log10(Math.max(rows[a].adj, eps)));
-      const sb = Math.abs(rows[b].lfc) * (-Math.log10(Math.max(rows[b].adj, eps)));
-      return sb - sa;
+  function resetView() {
+    SEARCH.value = '';
+    closeSuggest();
+    highlightShapes = []; highlightAnnotations = [];
+    Plotly.relayout(PLOT, {
+      shapes: [], annotations: [],
+      'xaxis.autorange': true, 'yaxis.autorange': 'reversed',
     });
-    const topUp = []; const topDn = [];
-    for (const i of idxs) {
-      if (rows[i].lfc > 0 && topUp.length < 8) topUp.push(i);
-      else if (rows[i].lfc < 0 && topDn.length < 8) topDn.push(i);
-      if (topUp.length === 8 && topDn.length === 8) break;
-    }
-    const annotations = [...topUp, ...topDn].map(i => ({
-      x: x[i], y: y[i], text: text[i],
-      showarrow: false, font: { size: 10, color: '#222' },
-      xanchor: rows[i].lfc > 0 ? 'left' : 'right',
-      xshift: rows[i].lfc > 0 ? 6 : -6,
-      yshift: 0,
-    }));
-
-    const trace = {
-      type: 'scattergl', mode: 'markers',
-      x, y, text,
-      hovertemplate: '<b>%{text}</b><br>L2FC %{x:.2f}<br>−log10 adj-p %{y:.2f}<extra></extra>',
-      marker: { color, size: 5.5, opacity: 0.85, line: { width: 0 } },
-    };
-
-    const sigLine = {
-      type: 'line', xref: 'paper', x0: 0, x1: 1,
-      y0: -Math.log10(SIG_ADJ), y1: -Math.log10(SIG_ADJ),
-      line: { color: '#ddd', dash: 'dot', width: 1 },
-    };
-
-    const nUp = rows.filter(r => r.adj <= SIG_ADJ && r.lfc >= SIG_LFC).length;
-    const nDn = rows.filter(r => r.adj <= SIG_ADJ && r.lfc <= -SIG_LFC).length;
-    Plotly.react(VPLOT, [trace], {
-      ...layout,
-      title: { text: `${pert}  ·  ${rows.length} tested · ${nUp} up · ${nDn} down (adj p ≤ ${SIG_ADJ}, |L2FC| ≥ ${SIG_LFC})`,
-               font: { size: 13 } },
-      annotations,
-      shapes: [sigLine],
-    }, config);
-    plotted = true;
   }
 
   return { init, onShow };
@@ -530,7 +519,7 @@ const Clusters = (() => {
 // Boot
 // ============================================================================
 MDE.init();
-Volcano.init();
+Clustermap.init();
 Clusters.init();
 
 // Initial route

@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>KOLF2.1J Perturbation Atlas</title>
-  <link rel="stylesheet" href="css/style.css?v=7">
-  <script src="https://cdn.plot.ly/plotly-basic-2.35.2.min.js" charset="utf-8"></script>
+  <link rel="stylesheet" href="css/style.css?v=8">
+  <script src="https://cdn.plot.ly/plotly-cartesian-2.35.2.min.js" charset="utf-8"></script>
 </head>
 <body>
   <header>
@@ -15,7 +15,7 @@
     </div>
     <nav class="tabs" role="tablist" aria-label="Views">
       <button class="tab active" role="tab" aria-selected="true"  data-tab="mde">MDE</button>
-      <button class="tab"        role="tab" aria-selected="false" data-tab="volcano">Volcano</button>
+      <button class="tab"        role="tab" aria-selected="false" data-tab="clustermap">Clustermap</button>
       <button class="tab"        role="tab" aria-selected="false" data-tab="clusters">Clusters</button>
     </nav>
   </header>
@@ -52,18 +52,19 @@
       </div>
     </section>
 
-    <!-- Volcano view -->
-    <section id="view-volcano" class="view" role="tabpanel" aria-labelledby="tab-volcano" hidden>
+    <!-- Clustermap view -->
+    <section id="view-clustermap" class="view" role="tabpanel" aria-labelledby="tab-clustermap" hidden>
       <div class="view-controls">
         <div class="combo">
-          <input id="vsearch" type="search" placeholder="Search perturbation…" autocomplete="off" spellcheck="false">
-          <ul id="vsuggest" class="suggest" hidden></ul>
+          <input id="csearch" type="search" placeholder="Search perturbation…" autocomplete="off" spellcheck="false">
+          <ul id="csuggest" class="suggest" hidden></ul>
         </div>
-        <span id="vmeta" class="meta"></span>
+        <span id="cmeta" class="meta"></span>
+        <button id="creset" title="Reset zoom + selection">Reset</button>
       </div>
       <div class="view-body">
-        <div id="vplot"></div>
-        <div id="vhint" class="hint">Pick a perturbation to view its volcano.</div>
+        <div id="cmap-plot"></div>
+        <div id="chint" class="hint">Loading correlation matrix…</div>
       </div>
     </section>
 
@@ -88,6 +89,6 @@
     <span><a href="https://doi.org/10.1101/2024.11.03.621734" target="_blank" rel="noopener">Doctor et&nbsp;al., bioRxiv 2024</a> · <a href="https://github.com/y-doctor/KOLF2.1J_Perturbation_Cell_Atlas" target="_blank" rel="noopener">source</a></span>
   </footer>
 
-  <script src="js/main.js?v=7"></script>
+  <script src="js/main.js?v=8"></script>
 </body>
 </html>
