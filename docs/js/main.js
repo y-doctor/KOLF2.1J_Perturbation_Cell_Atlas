@@ -247,7 +247,7 @@
   }
 
   // --- Load ---
-  fetch('data/mde.json')
+  fetch('data/mde.json?v=2')
     .then(r => r.json())
     .then(payload => {
       data = payload.points;
