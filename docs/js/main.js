@@ -65,8 +65,8 @@ const MDE = (() => {
 
   let fitnessCache = null;
   let signaturesCache = null;
-  function ensureFitness()    { return fitnessCache    || (fitnessCache    = fetch('data/mde/fitness.json?v=20').then(r => r.json())); }
-  function ensureSignatures() { return signaturesCache || (signaturesCache = fetch('data/mde/signatures.json?v=20').then(r => r.json())); }
+  function ensureFitness()    { return fitnessCache    || (fitnessCache    = fetch('data/mde/fitness.json?v=21').then(r => r.json())); }
+  function ensureSignatures() { return signaturesCache || (signaturesCache = fetch('data/mde/signatures.json?v=21').then(r => r.json())); }
 
   let data = [];
   let leidenLabels = {}, hdbscanLabels = {};
@@ -355,7 +355,7 @@ const MDE = (() => {
   }
 
   function init() {
-    return fetch('data/mde.json?v=20').then(r => r.json()).then(payload => {
+    return fetch('data/mde.json?v=21').then(r => r.json()).then(payload => {
       data = payload.points;
       leidenLabels  = payload.leiden_labels  || {};
       hdbscanLabels = payload.hdbscan_labels || {};
@@ -704,9 +704,9 @@ const Clustermap = makeClustermap({
   mainId:   'cmap-main', sideId:   'cmap-side',
   searchId: 'csearch',   suggestId:'csuggest',
   hintId:   'chint',     metaId:   'cmeta',     resetId: 'creset',
-  metaPath: 'data/clustermap/meta.json?v=20',
-  mainPath: 'data/clustermap/corr_int8.bin?v=20',
-  sidePath: 'data/clustermap/corr_side_int8.bin?v=20',
+  metaPath: 'data/clustermap/meta.json?v=21',
+  mainPath: 'data/clustermap/corr_int8.bin?v=21',
+  sidePath: 'data/clustermap/corr_side_int8.bin?v=21',
   mainZmin: -0.2, mainZmax: 0.2,
   sideZmin: -0.5, sideZmax: 0.5,
 });
@@ -717,9 +717,9 @@ const GeneClustermap = makeClustermap({
   mainId:   'gmap-main', sideId:   'gmap-side',
   searchId: 'gsearch',   suggestId:'gsuggest',
   hintId:   'ghint',     metaId:   'gmeta',     resetId: 'greset',
-  metaPath: 'data/genemap/meta.json?v=20',
-  mainPath: 'data/genemap/gene_corr_int8.bin?v=20',
-  sidePath: 'data/genemap/gene_corr_side_int8.bin?v=20',
+  metaPath: 'data/genemap/meta.json?v=21',
+  mainPath: 'data/genemap/gene_corr_int8.bin?v=21',
+  sidePath: 'data/genemap/gene_corr_side_int8.bin?v=21',
   mainZmin: -0.2, mainZmax: 0.2,
   sideZmin: -0.5, sideZmax: 0.5,
 });
@@ -750,7 +750,7 @@ const GeneQuery = (() => {
   let pendingPick = null;   // gene to render after topk lands
 
   function init() {
-    return fetch('data/genes/index.json?v=20').then(r => r.json()).then(idx => {
+    return fetch('data/genes/index.json?v=21').then(r => r.json()).then(idx => {
       genes      = idx.genes || [];
       nPerts     = idx.n_perts;
       K          = idx.k || 25;
@@ -768,7 +768,7 @@ const GeneQuery = (() => {
     if (topk) return Promise.resolve(topk);
     if (topkLoading) return topkLoading;
     META.textContent = 'Loading per-gene query data (~17 MB)…';
-    topkLoading = fetch('data/genes/topk.json?v=20').then(r => r.json()).then(data => {
+    topkLoading = fetch('data/genes/topk.json?v=21').then(r => r.json()).then(data => {
       topk = data;
       META.textContent = `${genes.length.toLocaleString()} genes · ${nPerts.toLocaleString()} perts`;
       return topk;
@@ -963,11 +963,139 @@ const GeneQuery = (() => {
 })();
 
 // ============================================================================
-// Clusters tab (placeholder until z-score matrix lands)
+// Clusters tab
 // ============================================================================
 const Clusters = (() => {
-  function init() { /* nothing yet */ }
-  function onShow() { /* nothing yet */ }
+  const LIST   = document.getElementById('clist');
+  const META   = document.getElementById('cmeta2');
+  const HINT   = document.getElementById('cl-hint');
+  const RES    = document.getElementById('cresults');
+  const TITLE  = document.getElementById('c-title');
+  const SUB    = document.getElementById('c-sub');
+  const UP     = document.getElementById('c-up');
+  const DN     = document.getElementById('c-dn');
+  const NMEM   = document.getElementById('c-nmem');
+  const MEMROW = document.getElementById('c-members');
+  const FILTER = document.getElementById('cfilter');
+
+  let data = null;              // { leiden: [...], hdbscan: [...], k_top }
+  let ctype = 'leiden';
+  let selectedId = null;
+  let loaded = null;            // promise
+
+  function ensureData() {
+    if (loaded) return loaded;
+    META.textContent = 'Loading cluster summaries…';
+    loaded = fetch('data/clusters/summary.json?v=21').then(r => r.json()).then(d => {
+      data = d;
+      META.textContent = meta();
+      return d;
+    }).catch(err => {
+      META.textContent = 'Failed to load clusters.';
+      throw err;
+    });
+    return loaded;
+  }
+
+  function meta() {
+    const nL = data.leiden.length, nH = data.hdbscan.length;
+    return `Leiden ${nL} · HDBSCAN ${nH} · top ${data.k_top} up/dn per cluster`;
+  }
+
+  function clusterLabel(c) {
+    return c.label && c.label.length ? c.label : `Cluster ${c.id}`;
+  }
+
+  function renderList() {
+    if (!data) return;
+    // Sort: unclustered (id=-1) to the bottom; rest by id ascending.
+    const arr = data[ctype].slice().sort((a, b) => {
+      if (a.id === -1) return 1;
+      if (b.id === -1) return -1;
+      return a.id - b.id;
+    });
+    const q = (FILTER.value || '').trim().toLowerCase();
+    LIST.innerHTML = '';
+    for (const c of arr) {
+      const lbl = c.id === -1 ? 'Unclustered (noise)' : clusterLabel(c);
+      if (q && !(lbl.toLowerCase().includes(q) || String(c.id).includes(q))) continue;
+      const row = document.createElement('div');
+      row.className = 'cl-row' + (c.id === selectedId ? ' active' : '');
+      row.innerHTML = `
+        <span class="cid">${c.id}</span>
+        <span class="clbl">${escapeHtml(lbl)}</span>
+        <span class="cn">${c.n}</span>`;
+      row.addEventListener('click', () => pick(c.id));
+      LIST.appendChild(row);
+    }
+  }
+
+  function pick(id) {
+    selectedId = id;
+    const c = data[ctype].find(x => x.id === id);
+    LIST.querySelectorAll('.cl-row').forEach(r => r.classList.toggle(
+      'active', r.querySelector('.cid').textContent === String(id)));
+    if (!c) { HINT.hidden = false; RES.hidden = true; return; }
+    HINT.hidden = true; RES.hidden = false;
+    TITLE.textContent = c.id === -1 ? 'Unclustered (noise)' : clusterLabel(c);
+    SUB.textContent = `${ctype.toUpperCase()} cluster ${c.id} · ${c.n} strong perturbations`;
+    fillDegTable(UP, c.up);
+    fillDegTable(DN, c.dn);
+    NMEM.textContent = c.n;
+    MEMROW.innerHTML = '';
+    for (const name of c.members) {
+      const a = document.createElement('a');
+      a.href = `#mde:${encodeURIComponent(name)}`;
+      a.className = 'chip';
+      a.textContent = name;
+      a.addEventListener('click', (e) => {
+        e.preventDefault();
+        jumpToMde(name);
+      });
+      MEMROW.appendChild(a);
+    }
+  }
+
+  function fillDegTable(tbody, rows) {
+    tbody.innerHTML = '';
+    for (const r of rows) {
+      const tr = document.createElement('tr');
+      const z = typeof r.z === 'number' ? r.z.toFixed(2) : r.z;
+      tr.innerHTML = `<td>${escapeHtml(r.g)}</td><td class="num">${z}</td>`;
+      tbody.appendChild(tr);
+    }
+  }
+
+  function jumpToMde(gene) {
+    if (typeof showTab === 'function') showTab('mde');
+    else location.hash = '#mde';
+    if (MDE.jumpTo) MDE.jumpTo(gene);
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => (
+      { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  }
+
+  function attach() {
+    document.querySelectorAll('#view-clusters .seg').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#view-clusters .seg').forEach(b => {
+          const on = (b === btn);
+          b.classList.toggle('active', on);
+          b.setAttribute('aria-checked', on);
+        });
+        ctype = btn.dataset.ctype;
+        selectedId = null;
+        HINT.hidden = false; RES.hidden = true;
+        renderList();
+      });
+    });
+    FILTER.addEventListener('input', renderList);
+  }
+
+  function init() { attach(); }
+  function onShow() { ensureData().then(renderList); }
   return { init, onShow };
 })();
 

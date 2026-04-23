@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>KOLF2.1J Perturbation Atlas</title>
-  <link rel="stylesheet" href="css/style.css?v=20">
+  <link rel="stylesheet" href="css/style.css?v=21">
   <script src="https://cdn.plot.ly/plotly-cartesian-2.35.2.min.js" charset="utf-8"></script>
 </head>
 <body>
@@ -148,14 +148,38 @@
     <section id="view-clusters" class="view" role="tabpanel" aria-labelledby="tab-clusters" hidden>
       <div class="view-controls">
         <div class="toggle" role="radiogroup" aria-label="Cluster type">
-          <button class="seg active" data-ctype="leiden"  role="radio" aria-checked="true">Leiden (62)</button>
-          <button class="seg"        data-ctype="hdbscan" role="radio" aria-checked="false">HDBSCAN (30)</button>
+          <button class="seg active" data-ctype="leiden"  role="radio" aria-checked="true">Leiden</button>
+          <button class="seg"        data-ctype="hdbscan" role="radio" aria-checked="false">HDBSCAN</button>
         </div>
+        <div class="search-wrap">
+          <input id="cfilter" type="search" placeholder="Filter by label or id…" autocomplete="off" spellcheck="false">
+        </div>
+        <span id="cmeta2" class="meta">Loading…</span>
       </div>
-      <div class="view-body">
-        <div id="cwait" class="placeholder">
-          <p><strong>Cluster browser coming soon.</strong></p>
-          <p>Waiting on the z-score matrix from the slurm job (~3 h ETA). Once it lands, this tab will show each cluster's manual label, member count, and the top 30 up/down genes by averaged NTC z-score across members.</p>
+      <div class="view-body cl-body">
+        <aside id="clist" class="cl-list"></aside>
+        <div class="cl-main">
+          <div id="cl-hint" class="placeholder">
+            <p>Pick a cluster on the left to see its averaged top 30 up/down genes (mean NTC z-score across strong-perturbation members) and the member perts.</p>
+          </div>
+          <div id="cresults" hidden>
+            <h2 id="c-title">—</h2>
+            <p id="c-sub" class="meta"></p>
+            <div class="gq-cols">
+              <section>
+                <h3>Top 30 genes · highest avg z</h3>
+                <table class="degs"><tbody id="c-up"></tbody></table>
+              </section>
+              <section>
+                <h3>Top 30 genes · lowest avg z</h3>
+                <table class="degs"><tbody id="c-dn"></tbody></table>
+              </section>
+            </div>
+            <section class="cl-members">
+              <h3>Member perturbations (<span id="c-nmem">0</span>)</h3>
+              <div id="c-members" class="chip-row"></div>
+            </section>
+          </div>
         </div>
       </div>
     </section>
@@ -165,6 +189,6 @@
     <span><a href="https://doi.org/10.1101/2024.11.03.621734" target="_blank" rel="noopener">Doctor et&nbsp;al., bioRxiv 2024</a> · <a href="https://github.com/y-doctor/KOLF2.1J_Perturbation_Cell_Atlas" target="_blank" rel="noopener">source</a></span>
   </footer>
 
-  <script src="js/main.js?v=20"></script>
+  <script src="js/main.js?v=21"></script>
 </body>
 </html>

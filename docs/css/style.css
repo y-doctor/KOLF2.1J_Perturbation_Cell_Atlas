@@ -378,6 +378,43 @@ button.mini.on    { background: var(--accent); color: var(--accent-fg); border-c
   .gq-cols { grid-template-columns: 1fr; }
 }
 
+/* Clusters layout */
+.cl-body { display: flex; flex-direction: row; overflow: hidden; }
+.cl-list {
+  width: 280px;
+  min-width: 240px;
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+  background: #fafafa;
+}
+.cl-row {
+  display: flex; align-items: baseline; gap: 6px;
+  padding: 8px 14px; border-bottom: 1px solid var(--line);
+  cursor: pointer; font-size: 13px; line-height: 1.3;
+}
+.cl-row:hover { background: #f0f0f0; }
+.cl-row.active { background: #e8f0fe; }
+.cl-row .cid { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 28px; }
+.cl-row .clbl { flex: 1; color: var(--fg); font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
+.cl-row .cn { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 11px; }
+.cl-main { flex: 1; padding: 18px 24px; overflow: auto; }
+.cl-main h2 { margin: 0 0 4px; font-size: 22px; font-weight: 600; }
+.cl-members { margin-top: 22px; }
+.cl-members h3 { margin: 0 0 8px; font-size: 13px; font-weight: 500; color: var(--muted); }
+.chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  display: inline-block; padding: 3px 9px; border-radius: 10px;
+  background: #f2f2f2; border: 1px solid var(--line);
+  font-size: 12px; color: var(--fg);
+  cursor: pointer; text-decoration: none;
+  font-variant-numeric: tabular-nums;
+}
+.chip:hover { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+@media (max-width: 720px) {
+  .cl-body { flex-direction: column; }
+  .cl-list { width: 100%; max-height: 40vh; border-right: 0; border-bottom: 1px solid var(--line); }
+}
+
 footer {
   padding: 10px 24px;
   border-top: 1px solid var(--line);
