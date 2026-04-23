@@ -281,7 +281,7 @@ const MDE = (() => {
   }
 
   function init() {
-    return fetch('data/mde.json?v=10').then(r => r.json()).then(payload => {
+    return fetch('data/mde.json?v=11').then(r => r.json()).then(payload => {
       data = payload.points;
       leidenLabels  = payload.leiden_labels  || {};
       hdbscanLabels = payload.hdbscan_labels || {};
@@ -364,9 +364,9 @@ const Clustermap = (() => {
     HINT.hidden = false;
     HINT.textContent = 'Loading correlation matrices (~2.8 MB)…';
     return Promise.all([
-      fetch('data/clustermap/meta.json?v=10').then(r => r.json()),
-      fetch('data/clustermap/corr_int8.bin?v=10').then(r => r.arrayBuffer()),
-      fetch('data/clustermap/corr_side_int8.bin?v=10').then(r => r.arrayBuffer()),
+      fetch('data/clustermap/meta.json?v=11').then(r => r.json()),
+      fetch('data/clustermap/corr_int8.bin?v=11').then(r => r.arrayBuffer()),
+      fetch('data/clustermap/corr_side_int8.bin?v=11').then(r => r.arrayBuffer()),
     ]).then(([m, mainBuf, sideBuf]) => {
       meta  = m;
       perts = m.perts;
@@ -425,7 +425,7 @@ const Clustermap = (() => {
       type: 'heatmap',
       z, x: perts, y: perts,
       xaxis: 'x2', yaxis: 'y',
-      colorscale: 'RdBu', reversescale: false,   // paper convention: low=red, high=blue
+      colorscale: 'RdBu', reversescale: true,    // inverted: red=high, blue=low
       zmin: -0.2, zmax: 0.2,                      // tighter dynamic range for main
       hovertemplate: '<b>%{y}</b> × <b>%{x}</b><br>r = %{z:.3f}<extra></extra>',
       colorbar: {
@@ -471,7 +471,7 @@ const Clustermap = (() => {
       type: 'heatmap',
       z, x: sideMeta.perts, y: sideMeta.perts,
       xaxis: 'x2', yaxis: 'y',
-      colorscale: 'RdBu', reversescale: false,   // paper convention
+      colorscale: 'RdBu', reversescale: true,    // inverted: red=high, blue=low
       zmin: -0.5, zmax: 0.5,                      // wider range for the cluster blocks
       hovertemplate: '<b>%{y}</b> × <b>%{x}</b><br>r = %{z:.3f}<extra></extra>',
       showscale: false,
