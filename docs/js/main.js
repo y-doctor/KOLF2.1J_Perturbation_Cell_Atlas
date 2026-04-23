@@ -283,7 +283,7 @@ const MDE = (() => {
   }
 
   function init() {
-    return fetch('data/mde.json?v=13').then(r => r.json()).then(payload => {
+    return fetch('data/mde.json?v=14').then(r => r.json()).then(payload => {
       data = payload.points;
       leidenLabels  = payload.leiden_labels  || {};
       hdbscanLabels = payload.hdbscan_labels || {};
@@ -481,10 +481,11 @@ function makeClustermap(opts) {
       },
     };
 
-    // Cluster boundary lines on side heatmap (use xaxis2/yaxis)
+    // Cluster boundary lines + per-cluster left-side labels
     const shapes = [];
+    const blockStarts = [0, ...sideMeta.boundaries];
+    const blockEnds   = [...sideMeta.boundaries, ns];
     for (const b of sideMeta.boundaries) {
-      // horizontal across the heatmap subplot
       shapes.push({ type: 'line', xref: 'x2', yref: 'y',
         x0: -0.5, x1: ns - 0.5, y0: b - 0.5, y1: b - 0.5,
         line: { color: '#111', width: 0.5 } });
@@ -493,12 +494,32 @@ function makeClustermap(opts) {
         line: { color: '#111', width: 0.5 } });
     }
 
+    // Build tick labels: center of each block on yaxis, label from cluster_labels
+    const cluster_labels = (sideMeta.cluster_labels) || {};
+    const truncate = (s, n) => (s && s.length > n) ? s.slice(0, n - 1) + '…' : (s || '');
+    const tickvals = [];
+    const ticktext = [];
+    for (let i = 0; i < blockStarts.length; i++) {
+      const s = blockStarts[i], e = blockEnds[i];
+      const cid = sideMeta.hdbscan[s];
+      const label = cluster_labels[String(cid)] || '';
+      const display = label ? `${cid} · ${truncate(label, 26)}` : `${cid}`;
+      tickvals.push((s + e - 1) / 2);
+      ticktext.push(display);
+    }
+
     const layout = {
-      margin: { l: 12, r: 70, t: 12, b: 12 },                   // room for colorbar
+      margin: { l: 220, r: 70, t: 12, b: 12 },                  // wide left margin for labels
       xaxis:  { domain: [0, 0.04], showticklabels: false, ticks: '', fixedrange: true },
       xaxis2: { domain: [0.06, 1.0], showticklabels: false, ticks: '',
                 scaleanchor: 'y', constrain: 'domain' },          // square cells
-      yaxis:  { showticklabels: false, ticks: '', autorange: 'reversed', constrain: 'domain' },
+      yaxis:  {
+        side: 'left', showticklabels: true,
+        tickvals, ticktext,
+        tickfont: { size: 9, color: '#333' },
+        ticks: 'outside', ticklen: 3, tickcolor: '#bbb',
+        autorange: 'reversed', constrain: 'domain',
+      },
       hovermode: 'closest', showlegend: false, dragmode: 'zoom',
       plot_bgcolor: '#fff', paper_bgcolor: '#fff',
       annotations: [], shapes,
@@ -611,9 +632,9 @@ const Clustermap = makeClustermap({
   mainId:   'cmap-main', sideId:   'cmap-side',
   searchId: 'csearch',   suggestId:'csuggest',
   hintId:   'chint',     metaId:   'cmeta',     resetId: 'creset',
-  metaPath: 'data/clustermap/meta.json?v=13',
-  mainPath: 'data/clustermap/corr_int8.bin?v=13',
-  sidePath: 'data/clustermap/corr_side_int8.bin?v=13',
+  metaPath: 'data/clustermap/meta.json?v=14',
+  mainPath: 'data/clustermap/corr_int8.bin?v=14',
+  sidePath: 'data/clustermap/corr_side_int8.bin?v=14',
   mainZmin: -0.2, mainZmax: 0.2,
   sideZmin: -0.5, sideZmax: 0.5,
 });
@@ -624,9 +645,9 @@ const GeneClustermap = makeClustermap({
   mainId:   'gmap-main', sideId:   'gmap-side',
   searchId: 'gsearch',   suggestId:'gsuggest',
   hintId:   'ghint',     metaId:   'gmeta',     resetId: 'greset',
-  metaPath: 'data/genemap/meta.json?v=13',
-  mainPath: 'data/genemap/gene_corr_int8.bin?v=13',
-  sidePath: 'data/genemap/gene_corr_side_int8.bin?v=13',
+  metaPath: 'data/genemap/meta.json?v=14',
+  mainPath: 'data/genemap/gene_corr_int8.bin?v=14',
+  sidePath: 'data/genemap/gene_corr_side_int8.bin?v=14',
   mainZmin: -0.2, mainZmax: 0.2,
   sideZmin: -0.5, sideZmax: 0.5,
 });
