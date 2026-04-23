@@ -65,7 +65,23 @@
       x, y, text, hovertext,
       hovertemplate: '%{hovertext}<extra></extra>',
       marker: { color, size: 6, opacity: 0.85, line: { width: 0 } },
+      // HDBSCAN-cluster highlight: selected points go red+larger; unselected
+      // keep default opacity (no dimming, so zoomed-in views stay legible).
+      selected:   { marker: { color: '#d62728', size: 9 } },
+      unselected: { marker: { opacity: 0.85 } },
     };
+  }
+
+  // Build hdbscan cluster -> [indices] index once
+  let hdbscanMembers = new Map();
+  function buildHdbscanIndex() {
+    hdbscanMembers = new Map();
+    for (let i = 0; i < data.length; i++) {
+      const h = data[i].h;
+      if (h === -1) continue;
+      if (!hdbscanMembers.has(h)) hdbscanMembers.set(h, []);
+      hdbscanMembers.get(h).push(i);
+    }
   }
 
   const layout = {
@@ -132,6 +148,14 @@
   function focusGene(idx, { zoom = false } = {}) {
     const r = data[idx];
     selectedIdx = idx;
+
+    // Highlight HDBSCAN cluster members if this point is in a real cluster
+    let sel = [idx];
+    if (r.h !== -1 && hdbscanMembers.has(r.h)) {
+      sel = hdbscanMembers.get(r.h).slice();
+    }
+    Plotly.restyle(PLOT, { selectedpoints: [sel] });
+
     const relayout = { annotations: annotateSelected(r) };
     if (zoom) {
       const pad = Math.max((xRange[1] - xRange[0]), (yRange[1] - yRange[0])) * 0.06;
@@ -140,6 +164,12 @@
     }
     Plotly.relayout(PLOT, relayout);
     openPanel(idx);
+  }
+
+  function clearHighlight() {
+    selectedIdx = null;
+    Plotly.restyle(PLOT, { selectedpoints: [null] });
+    Plotly.relayout(PLOT, { annotations: [] });
   }
 
   function searchHighlight(query) {
@@ -159,12 +189,11 @@
   function resetView() {
     SEARCH.value = '';
     EMPTY.hidden = true;
-    selectedIdx = null;
     closePanel();
+    clearHighlight();
     Plotly.relayout(PLOT, {
       'xaxis.range': xRange,
       'yaxis.range': yRange,
-      annotations: [],
     });
   }
 
@@ -227,7 +256,7 @@
     if (e.key === 'Escape') { SEARCH.value = ''; resetView(); }
   });
   RESET.addEventListener('click', resetView);
-  PCLOSE.addEventListener('click', closePanel);
+  PCLOSE.addEventListener('click', () => { closePanel(); clearHighlight(); });
 
   function attachPlotEvents() {
     PLOT.on('plotly_click', ev => {
@@ -238,13 +267,14 @@
   }
 
   // --- Load ---
-  fetch('data/mde.json?v=3')
+  fetch('data/mde.json?v=4')
     .then(r => r.json())
     .then(payload => {
       data = payload.points;
       leidenLabels  = payload.leiden_labels  || {};
       hdbscanLabels = payload.hdbscan_labels || {};
       indexByGene = new Map(data.map((r, i) => [r.g, i]));
+      buildHdbscanIndex();
       computeRanks();
       initialAutorange();
       render();
