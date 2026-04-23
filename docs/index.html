@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>KOLF2.1J Perturbation Atlas</title>
-  <link rel="stylesheet" href="css/style.css?v=8">
+  <link rel="stylesheet" href="css/style.css?v=9">
   <script src="https://cdn.plot.ly/plotly-cartesian-2.35.2.min.js" charset="utf-8"></script>
 </head>
 <body>
@@ -62,8 +62,9 @@
         <span id="cmeta" class="meta"></span>
         <button id="creset" title="Reset zoom + selection">Reset</button>
       </div>
-      <div class="view-body">
-        <div id="cmap-plot"></div>
+      <div class="view-body cmap-body">
+        <div id="cmap-main" class="cmap-pane"></div>
+        <div id="cmap-side" class="cmap-pane cmap-pane-narrow"></div>
         <div id="chint" class="hint">Loading correlation matrix…</div>
       </div>
     </section>
@@ -89,6 +90,6 @@
     <span><a href="https://doi.org/10.1101/2024.11.03.621734" target="_blank" rel="noopener">Doctor et&nbsp;al., bioRxiv 2024</a> · <a href="https://github.com/y-doctor/KOLF2.1J_Perturbation_Cell_Atlas" target="_blank" rel="noopener">source</a></span>
   </footer>
 
-  <script src="js/main.js?v=8"></script>
+  <script src="js/main.js?v=9"></script>
 </body>
 </html>

@@ -281,7 +281,7 @@ const MDE = (() => {
   }
 
   function init() {
-    return fetch('data/mde.json?v=8').then(r => r.json()).then(payload => {
+    return fetch('data/mde.json?v=9').then(r => r.json()).then(payload => {
       data = payload.points;
       leidenLabels  = payload.leiden_labels  || {};
       hdbscanLabels = payload.hdbscan_labels || {};
@@ -306,37 +306,54 @@ const MDE = (() => {
 })();
 
 // ============================================================================
-// Clustermap tab — pert × pert Pearson on z-normed pseudobulks,
-// hierarchically clustered, served as int8 binary.
+// Clustermap tab — pert × pert Pearson on z-normed pseudobulks.
+//   Main pane: hierarchically clustered 1655 x 1655 + HDBSCAN color strip.
+//   Side pane: 314 perts with HDBSCAN != -1, sorted by cluster id, with
+//              cluster-boundary separator lines + HDBSCAN color strip.
 // ============================================================================
 const Clustermap = (() => {
-  const PLOT   = document.getElementById('cmap-plot');
+  const MAIN   = document.getElementById('cmap-main');
+  const SIDE   = document.getElementById('cmap-side');
   const SEARCH = document.getElementById('csearch');
   const SUG    = document.getElementById('csuggest');
   const HINT   = document.getElementById('chint');
   const META   = document.getElementById('cmeta');
   const RESET  = document.getElementById('creset');
 
-  let perts = [];                   // ordered pert names (length n)
-  let indexByGene = new Map();      // gene -> row/col index
-  let n = 0;
+  let meta = null;                  // full metadata
+  let perts = [];                   // main matrix order
   let M = null;                     // Float32Array length n*n
-  let plotted = false;
+  let n = 0;
+  let indexByGene = new Map();
+  let plottedMain = false, plottedSide = false;
   let activeSugg = -1;
-  let zRange = null;                // initial axis range
-  let highlightAnnotations = [];
-  let highlightShapes = [];
 
-  const layout = {
-    margin: { l: 12, r: 90, t: 12, b: 12 },
-    xaxis: { showticklabels: false, ticks: '', constrain: 'domain' },
-    yaxis: { showticklabels: false, ticks: '', autorange: 'reversed', scaleanchor: 'x' },
-    hovermode: 'closest',
-    showlegend: false,
-    dragmode: 'zoom',
-    plot_bgcolor: '#fff', paper_bgcolor: '#fff',
-    annotations: [], shapes: [],
-  };
+  // ---- color helpers ----
+  const GRAY = '#c7c7c7';
+  function hdbscanColor(h) {
+    if (h === -1) return GRAY;
+    const golden = 0.61803398875;
+    const hue = (h * golden * 360) % 360;
+    return `hsl(${hue.toFixed(1)},62%,48%)`;
+  }
+  // Discrete colorscale: each unique id -> a step in [0,1]; z values are
+  // normalized indices (idx/N + 0.5/N), zmin=0, zmax=1.
+  function discreteScaleAndZ(ids) {
+    const uniq = [...new Set(ids)].sort((a,b) => a - b);
+    const N = uniq.length;
+    const idxOf = new Map(uniq.map((v,i) => [v, i]));
+    const scale = [];
+    for (let i = 0; i < N; i++) {
+      const c = hdbscanColor(uniq[i]);
+      scale.push([i / N, c]);
+      const t1 = (i + 1) / N;
+      scale.push([Math.min(t1, 1.0), c]);
+    }
+    const zNorm = ids.map(v => (idxOf.get(v) + 0.5) / N);
+    return { scale, zNorm, uniq };
+  }
+
+  // ---- Plotly common config ----
   const config = {
     responsive: true, displaylogo: false, scrollZoom: false,
     modeBarButtonsToRemove: ['lasso2d','select2d','toggleSpikelines'],
@@ -345,24 +362,35 @@ const Clustermap = (() => {
 
   function init() {
     HINT.hidden = false;
-    HINT.textContent = 'Loading correlation matrix (~2.7 MB)…';
+    HINT.textContent = 'Loading correlation matrices (~2.8 MB)…';
     return Promise.all([
-      fetch('data/clustermap/meta.json?v=8').then(r => r.json()),
-      fetch('data/clustermap/corr_int8.bin?v=8').then(r => r.arrayBuffer()),
-    ]).then(([meta, buf]) => {
-      perts = meta.perts;
-      n = meta.n;
-      const i8 = new Int8Array(buf);
-      if (i8.length !== n * n) {
-        throw new Error(`Binary length ${i8.length} != n^2 (${n*n})`);
-      }
-      const scale = meta.scale || 127;
+      fetch('data/clustermap/meta.json?v=9').then(r => r.json()),
+      fetch('data/clustermap/corr_int8.bin?v=9').then(r => r.arrayBuffer()),
+      fetch('data/clustermap/corr_side_int8.bin?v=9').then(r => r.arrayBuffer()),
+    ]).then(([m, mainBuf, sideBuf]) => {
+      meta  = m;
+      perts = m.perts;
+      n     = m.n;
+      const scale = m.scale || 127;
+
+      // Main matrix
+      const mi8 = new Int8Array(mainBuf);
+      if (mi8.length !== n * n) throw new Error(`main bin length ${mi8.length} != ${n*n}`);
       M = new Float32Array(n * n);
-      for (let i = 0; i < i8.length; i++) M[i] = i8[i] / scale;
+      for (let i = 0; i < mi8.length; i++) M[i] = mi8[i] / scale;
       indexByGene = new Map(perts.map((g, i) => [g, i]));
-      META.textContent = `${n} × ${n} perturbations · Pearson r`;
+
+      // Side matrix
+      const ns = m.side.n;
+      const si8 = new Int8Array(sideBuf);
+      if (si8.length !== ns * ns) throw new Error(`side bin length ${si8.length} != ${ns*ns}`);
+      const Ms = new Float32Array(ns * ns);
+      for (let i = 0; i < si8.length; i++) Ms[i] = si8[i] / scale;
+
+      META.textContent = `${n} perts (left)  ·  ${ns} HDBSCAN-clustered (right)  ·  Pearson r`;
       attachEvents();
-      render();
+      renderMain(M);
+      renderSide(Ms, ns);
       HINT.hidden = true;
     }).catch(err => {
       HINT.textContent = `Failed to load clustermap: ${err.message || err}`;
@@ -370,33 +398,110 @@ const Clustermap = (() => {
   }
 
   function onShow() {
-    if (plotted) Plotly.Plots.resize(PLOT);
+    if (plottedMain) Plotly.Plots.resize(MAIN);
+    if (plottedSide) Plotly.Plots.resize(SIDE);
     if (SEARCH) SEARCH.focus();
   }
 
-  function render() {
-    // Rebuild z as array of Float32 row views (Plotly accepts typed-array rows)
+  // -------------------- MAIN pane --------------------
+  function renderMain(M) {
     const z = new Array(n);
     for (let i = 0; i < n; i++) z[i] = M.subarray(i * n, (i + 1) * n);
 
-    const trace = {
+    const { scale: hdbScale, zNorm: hdbZ } = discreteScaleAndZ(meta.hdbscan);
+    const customLabels = meta.hdbscan.map(h => h === -1 ? 'noise' : `${h}`);
+
+    const stripTrace = {
       type: 'heatmap',
-      z,
-      x: perts, y: perts,
+      z: hdbZ.map(v => [v]),
+      x: [0], y: perts,
+      xaxis: 'x', yaxis: 'y',
+      colorscale: hdbScale, zmin: 0, zmax: 1,
+      showscale: false,
+      customdata: customLabels.map(l => [l]),
+      hovertemplate: '<b>%{y}</b><br>HDBSCAN %{customdata[0]}<extra></extra>',
+    };
+    const heatTrace = {
+      type: 'heatmap',
+      z, x: perts, y: perts,
+      xaxis: 'x2', yaxis: 'y',
       colorscale: 'RdBu', reversescale: true,
       zmin: -0.5, zmax: 0.5,
       hovertemplate: '<b>%{y}</b> × <b>%{x}</b><br>r = %{z:.3f}<extra></extra>',
       colorbar: {
-        title: { text: 'Pearson r', font: { size: 11 } },
+        title: { text: 'Pearson r', font: { size: 10 } },
         thickness: 8, len: 0.5, x: 1.02, xanchor: 'left',
         tickfont: { size: 10 },
       },
     };
-    Plotly.react(PLOT, [trace], layout, config);
-    plotted = true;
-    zRange = null;  // will capture after first relayout below if needed
+    const layout = {
+      margin: { l: 12, r: 70, t: 12, b: 12 },
+      xaxis:  { domain: [0, 0.025], showticklabels: false, ticks: '', fixedrange: true },
+      xaxis2: { domain: [0.04, 1.0], showticklabels: false, ticks: '' },
+      yaxis:  { showticklabels: false, ticks: '', autorange: 'reversed' },
+      hovermode: 'closest', showlegend: false, dragmode: 'zoom',
+      plot_bgcolor: '#fff', paper_bgcolor: '#fff',
+      annotations: [], shapes: [],
+    };
+    Plotly.react(MAIN, [stripTrace, heatTrace], layout, config);
+    plottedMain = true;
   }
 
+  // -------------------- SIDE pane --------------------
+  function renderSide(Ms, ns) {
+    const sideMeta = meta.side;
+    const z = new Array(ns);
+    for (let i = 0; i < ns; i++) z[i] = Ms.subarray(i * ns, (i + 1) * ns);
+
+    const { scale: hdbScale, zNorm: hdbZ } = discreteScaleAndZ(sideMeta.hdbscan);
+    const customLabels = sideMeta.hdbscan.map(h => `${h}`);
+
+    const stripTrace = {
+      type: 'heatmap',
+      z: hdbZ.map(v => [v]),
+      x: [0], y: sideMeta.perts,
+      xaxis: 'x', yaxis: 'y',
+      colorscale: hdbScale, zmin: 0, zmax: 1,
+      showscale: false,
+      customdata: customLabels.map(l => [l]),
+      hovertemplate: '<b>%{y}</b><br>HDBSCAN %{customdata[0]}<extra></extra>',
+    };
+    const heatTrace = {
+      type: 'heatmap',
+      z, x: sideMeta.perts, y: sideMeta.perts,
+      xaxis: 'x2', yaxis: 'y',
+      colorscale: 'RdBu', reversescale: true,
+      zmin: -0.5, zmax: 0.5,
+      hovertemplate: '<b>%{y}</b> × <b>%{x}</b><br>r = %{z:.3f}<extra></extra>',
+      showscale: false,
+    };
+
+    // Cluster boundary lines on side heatmap (use xaxis2/yaxis)
+    const shapes = [];
+    for (const b of sideMeta.boundaries) {
+      // horizontal across the heatmap subplot
+      shapes.push({ type: 'line', xref: 'x2', yref: 'y',
+        x0: -0.5, x1: ns - 0.5, y0: b - 0.5, y1: b - 0.5,
+        line: { color: '#111', width: 0.5 } });
+      shapes.push({ type: 'line', xref: 'x2', yref: 'y',
+        x0: b - 0.5, x1: b - 0.5, y0: -0.5, y1: ns - 0.5,
+        line: { color: '#111', width: 0.5 } });
+    }
+
+    const layout = {
+      margin: { l: 12, r: 12, t: 12, b: 12 },
+      xaxis:  { domain: [0, 0.04], showticklabels: false, ticks: '', fixedrange: true },
+      xaxis2: { domain: [0.06, 1.0], showticklabels: false, ticks: '' },
+      yaxis:  { showticklabels: false, ticks: '', autorange: 'reversed' },
+      hovermode: 'closest', showlegend: false, dragmode: 'zoom',
+      plot_bgcolor: '#fff', paper_bgcolor: '#fff',
+      annotations: [], shapes,
+    };
+    Plotly.react(SIDE, [stripTrace, heatTrace], layout, config);
+    plottedSide = true;
+  }
+
+  // -------------------- Search / suggest --------------------
   function attachEvents() {
     SEARCH.addEventListener('input',   () => updateSuggest(SEARCH.value));
     SEARCH.addEventListener('focus',   () => updateSuggest(SEARCH.value));
@@ -404,7 +509,6 @@ const Clustermap = (() => {
     SEARCH.addEventListener('keydown', onSearchKey);
     RESET.addEventListener('click', resetView);
   }
-
   function fuzzy(query) {
     const q = query.trim().toUpperCase();
     if (!q) return perts.slice(0, 12);
@@ -413,7 +517,6 @@ const Clustermap = (() => {
     const sub = perts.filter(p => !p.toUpperCase().startsWith(q) && p.toUpperCase().includes(q));
     return [...eq, ...pre, ...sub].slice(0, 12);
   }
-
   function updateSuggest(q) {
     const list = fuzzy(q);
     if (!list.length) { closeSuggest(); return; }
@@ -436,7 +539,6 @@ const Clustermap = (() => {
     SUG.hidden = false;
   }
   function closeSuggest() { SUG.hidden = true; activeSugg = -1; }
-
   function onSearchKey(e) {
     if (SUG.hidden) return;
     const items = SUG.querySelectorAll('li');
@@ -459,47 +561,38 @@ const Clustermap = (() => {
       closeSuggest();
     }
   }
-
   function selectPert(p) {
     const idx = indexByGene.get(p);
     if (idx == null) return;
     SEARCH.value = p;
     closeSuggest();
-    // Crosshair shapes through the row/column
-    highlightShapes = [
-      { type: 'line', xref: 'paper', x0: 0, x1: 1, y0: idx, y1: idx,
-        line: { color: '#111', width: 1, dash: 'dot' } },
-      { type: 'line', yref: 'paper', x0: idx, x1: idx, y0: 0, y1: 1,
-        line: { color: '#111', width: 1, dash: 'dot' } },
-    ];
-    highlightAnnotations = [
-      { x: idx, y: 0, xref: 'x', yref: 'paper',
-        text: p, showarrow: false, yanchor: 'bottom', yshift: 4,
-        font: { size: 11, color: '#111' },
-        bgcolor: 'rgba(255,255,255,0.85)', bordercolor: '#111',
-        borderwidth: 1, borderpad: 2 },
-    ];
-    Plotly.relayout(PLOT, {
-      shapes: highlightShapes,
-      annotations: highlightAnnotations,
-    });
-    // Zoom to a window of ±60 around the picked pert
     const W = 60;
     const x0 = Math.max(0, idx - W);
     const x1 = Math.min(n - 1, idx + W);
-    Plotly.relayout(PLOT, {
-      'xaxis.range': [x0, x1],
-      'yaxis.range': [x1, x0],   // y reversed
+    Plotly.relayout(MAIN, {
+      shapes: [
+        { type: 'line', xref: 'x2', yref: 'paper', x0: idx, x1: idx, y0: 0, y1: 1,
+          line: { color: '#111', width: 1, dash: 'dot' } },
+        { type: 'line', xref: 'paper', yref: 'y', x0: 0, x1: 1, y0: idx, y1: idx,
+          line: { color: '#111', width: 1, dash: 'dot' } },
+      ],
+      annotations: [
+        { x: idx, y: 0, xref: 'x2', yref: 'paper',
+          text: p, showarrow: false, yanchor: 'bottom', yshift: 4,
+          font: { size: 11, color: '#111' },
+          bgcolor: 'rgba(255,255,255,0.85)', bordercolor: '#111',
+          borderwidth: 1, borderpad: 2 },
+      ],
+      'xaxis2.range': [x0, x1],
+      'yaxis.range':  [x1, x0],
     });
   }
-
   function resetView() {
     SEARCH.value = '';
     closeSuggest();
-    highlightShapes = []; highlightAnnotations = [];
-    Plotly.relayout(PLOT, {
+    Plotly.relayout(MAIN, {
       shapes: [], annotations: [],
-      'xaxis.autorange': true, 'yaxis.autorange': 'reversed',
+      'xaxis2.autorange': true, 'yaxis.autorange': 'reversed',
     });
   }
 

@@ -102,10 +102,26 @@ main {
   display: flex;
 }
 
-#plot, #vplot {
+#plot {
   flex: 1;
   position: relative;
   min-width: 0;
+}
+
+/* Clustermap: main + side-by-side panes */
+.cmap-body { padding: 0; }
+.cmap-pane {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+#cmap-main { flex: 2.2; border-right: 1px solid var(--line); }
+#cmap-side { flex: 1;   }
+@media (max-width: 900px) {
+  .cmap-body { flex-direction: column; }
+  #cmap-main, #cmap-side { height: 50%; flex: none; }
+  #cmap-main { border-right: 0; border-bottom: 1px solid var(--line); }
 }
 
 .hint {
