@@ -281,7 +281,7 @@ const MDE = (() => {
   }
 
   function init() {
-    return fetch('data/mde.json?v=6').then(r => r.json()).then(payload => {
+    return fetch('data/mde.json?v=7').then(r => r.json()).then(payload => {
       data = payload.points;
       leidenLabels  = payload.leiden_labels  || {};
       hdbscanLabels = payload.hdbscan_labels || {};
@@ -342,7 +342,7 @@ const Volcano = (() => {
   const COL_NS  = '#bbb';
 
   function init() {
-    return fetch('data/volcano/_index.json?v=6').then(r => r.json()).then(idx => {
+    return fetch('data/volcano/perts.json?v=7').then(r => r.json()).then(idx => {
       perts = idx.perts || [];
       VMETA.textContent = `${perts.length} perturbations`;
       attachEvents();
@@ -433,7 +433,7 @@ const Volcano = (() => {
     VHINT.hidden = false;
     const fetchRows = cache.has(p)
       ? Promise.resolve(cache.get(p))
-      : fetch(`data/volcano/${encodeURIComponent(p)}.json?v=6`).then(r => r.json())
+      : fetch(`data/volcano/${encodeURIComponent(p)}.json?v=7`).then(r => r.json())
           .then(rows => { cache.set(p, rows); return rows; });
     fetchRows.then(rows => render(p, rows)).catch(err => {
       VHINT.textContent = `Failed to load ${p}: ${err}`;
