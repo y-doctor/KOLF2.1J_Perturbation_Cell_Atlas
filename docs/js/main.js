@@ -3,7 +3,6 @@
   const SEARCH = document.getElementById('search');
   const EMPTY  = document.getElementById('empty');
   const RESET  = document.getElementById('reset');
-  const SEGS   = document.querySelectorAll('.seg');
   const PANEL  = document.getElementById('panel');
   const PCLOSE = document.getElementById('panel-close');
 
@@ -24,7 +23,6 @@
   let nDegsRank = new Map();   // gene -> rank by n_DEGs desc
   let edistRank = new Map();   // gene -> rank by edist desc
   let totalRanked = 0;
-  let mode = 'l';              // 'l' | 'h'
   let xRange = null, yRange = null;
   let selectedIdx = null;
 
@@ -36,14 +34,16 @@
     return `hsl(${hue.toFixed(1)},62%,48%)`;
   }
 
-  function clusterLabelFor(p, m) {
-    const labels = m === 'l' ? leidenLabels : hdbscanLabels;
-    const cid = p[m];
-    if (cid === -1) return 'unclustered';
-    return labels[cid] || `cluster ${cid}`;
+  // Side-panel cluster line: "cluster N: <label or unlabeled>"; HDBSCAN -1 -> "unclustered"
+  function panelClusterText(p, which) {
+    const cid = p[which];
+    if (which === 'h' && cid === -1) return 'unclustered';
+    const labels = which === 'l' ? leidenLabels : hdbscanLabels;
+    const label = labels[cid];
+    return `cluster ${cid}: ${label && label.length ? label : 'unlabeled'}`;
   }
 
-  function buildTrace(records, m) {
+  function buildTrace(records) {
     const x = new Array(records.length);
     const y = new Array(records.length);
     const text = new Array(records.length);
@@ -55,8 +55,8 @@
       x[i] = r.x;
       y[i] = r.y;
       text[i] = r.g;
-      hovertext[i] = `<b>${r.g}</b><br>${clusterLabelFor(r, m)}`;
-      color[i] = clusterColor(r[m]);
+      hovertext[i] = `<b>${r.g}</b>`;
+      color[i] = clusterColor(r.l);
     }
 
     return {
@@ -99,7 +99,7 @@
   }
 
   function render() {
-    Plotly.react(PLOT, [buildTrace(data, mode)], {
+    Plotly.react(PLOT, [buildTrace(data)], {
       ...layout,
       xaxis: { ...layout.xaxis, range: xRange },
       yaxis: { ...layout.yaxis, range: yRange },
@@ -205,8 +205,8 @@
   function openPanel(idx) {
     const r = data[idx];
     P.gene.textContent   = r.g;
-    P.leiden.textContent = clusterLabelFor(r, 'l');
-    P.hdb.textContent    = clusterLabelFor(r, 'h');
+    P.leiden.textContent = panelClusterText(r, 'l');
+    P.hdb.textContent    = panelClusterText(r, 'h');
     P.ndegs.textContent  = fmtWithRank(fmtInt(r.n), nDegsRank.get(r.g), totalRanked);
     P.edist.textContent  = fmtWithRank(fmtFloat(r.e, 2), edistRank.get(r.g), totalRanked);
 
@@ -229,15 +229,6 @@
   RESET.addEventListener('click', resetView);
   PCLOSE.addEventListener('click', closePanel);
 
-  SEGS.forEach(btn => btn.addEventListener('click', () => {
-    if (btn.classList.contains('active')) return;
-    SEGS.forEach(b => { b.classList.remove('active'); b.setAttribute('aria-checked', 'false'); });
-    btn.classList.add('active');
-    btn.setAttribute('aria-checked', 'true');
-    mode = btn.dataset.mode;
-    render();
-  }));
-
   function attachPlotEvents() {
     PLOT.on('plotly_click', ev => {
       const pt = ev.points && ev.points[0];
@@ -247,7 +238,7 @@
   }
 
   // --- Load ---
-  fetch('data/mde.json?v=2')
+  fetch('data/mde.json?v=3')
     .then(r => r.json())
     .then(payload => {
       data = payload.points;
