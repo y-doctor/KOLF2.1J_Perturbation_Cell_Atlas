@@ -65,8 +65,8 @@ const MDE = (() => {
 
   let fitnessCache = null;
   let signaturesCache = null;
-  function ensureFitness()    { return fitnessCache    || (fitnessCache    = fetch('data/mde/fitness.json?v=21').then(r => r.json())); }
-  function ensureSignatures() { return signaturesCache || (signaturesCache = fetch('data/mde/signatures.json?v=21').then(r => r.json())); }
+  function ensureFitness()    { return fitnessCache    || (fitnessCache    = fetch('data/mde/fitness.json?v=22').then(r => r.json())); }
+  function ensureSignatures() { return signaturesCache || (signaturesCache = fetch('data/mde/signatures.json?v=22').then(r => r.json())); }
 
   let data = [];
   let leidenLabels = {}, hdbscanLabels = {};
@@ -355,7 +355,7 @@ const MDE = (() => {
   }
 
   function init() {
-    return fetch('data/mde.json?v=21').then(r => r.json()).then(payload => {
+    return fetch('data/mde.json?v=22').then(r => r.json()).then(payload => {
       data = payload.points;
       leidenLabels  = payload.leiden_labels  || {};
       hdbscanLabels = payload.hdbscan_labels || {};
@@ -481,7 +481,12 @@ function makeClustermap(opts) {
     for (let i = 0; i < n; i++) z[i] = M.subarray(i * n, (i + 1) * n);
 
     const { scale: hdbScale, zNorm: hdbZ } = discreteScaleAndZ(meta.hdbscan);
-    const customLabels = meta.hdbscan.map(h => h === -1 ? 'noise' : `${h}`);
+    const clLabels = (meta.side && meta.side.cluster_labels) || {};
+    const customLabels = meta.hdbscan.map(h => {
+      if (h === -1) return 'noise';
+      const lbl = clLabels[String(h)];
+      return lbl ? `${h} · ${lbl}` : `${h}`;
+    });
 
     const stripTrace = {
       type: 'heatmap',
@@ -527,7 +532,11 @@ function makeClustermap(opts) {
     for (let i = 0; i < ns; i++) z[i] = Ms.subarray(i * ns, (i + 1) * ns);
 
     const { scale: hdbScale, zNorm: hdbZ } = discreteScaleAndZ(sideMeta.hdbscan);
-    const customLabels = sideMeta.hdbscan.map(h => `${h}`);
+    const cluster_labels = (sideMeta.cluster_labels) || {};
+    const customLabels = sideMeta.hdbscan.map(h => {
+      const lbl = cluster_labels[String(h)];
+      return lbl ? `${h} · ${lbl}` : `${h}`;
+    });
 
     const stripTrace = {
       type: 'heatmap',
@@ -553,10 +562,8 @@ function makeClustermap(opts) {
       },
     };
 
-    // Cluster boundary lines + per-cluster left-side labels
+    // Cluster boundary lines (labels are hover-only now)
     const shapes = [];
-    const blockStarts = [0, ...sideMeta.boundaries];
-    const blockEnds   = [...sideMeta.boundaries, ns];
     for (const b of sideMeta.boundaries) {
       shapes.push({ type: 'line', xref: 'x2', yref: 'y',
         x0: -0.5, x1: ns - 0.5, y0: b - 0.5, y1: b - 0.5,
@@ -566,30 +573,13 @@ function makeClustermap(opts) {
         line: { color: '#111', width: 0.5 } });
     }
 
-    // Build tick labels: center of each block on yaxis, label from cluster_labels
-    const cluster_labels = (sideMeta.cluster_labels) || {};
-    const truncate = (s, n) => (s && s.length > n) ? s.slice(0, n - 1) + '…' : (s || '');
-    const tickvals = [];
-    const ticktext = [];
-    for (let i = 0; i < blockStarts.length; i++) {
-      const s = blockStarts[i], e = blockEnds[i];
-      const cid = sideMeta.hdbscan[s];
-      const label = cluster_labels[String(cid)] || '';
-      const display = label ? `${cid} · ${truncate(label, 26)}` : `${cid}`;
-      tickvals.push((s + e - 1) / 2);
-      ticktext.push(display);
-    }
-
     const layout = {
-      margin: { l: 220, r: 70, t: 12, b: 12 },                  // wide left margin for labels
+      margin: { l: 12, r: 70, t: 12, b: 12 },                   // labels are hover-only
       xaxis:  { domain: [0, 0.04], showticklabels: false, ticks: '', fixedrange: true },
       xaxis2: { domain: [0.06, 1.0], showticklabels: false, ticks: '',
                 scaleanchor: 'y', constrain: 'domain' },          // square cells
       yaxis:  {
-        side: 'left', showticklabels: true,
-        tickvals, ticktext,
-        tickfont: { size: 9, color: '#333' },
-        ticks: 'outside', ticklen: 3, tickcolor: '#bbb',
+        side: 'left', showticklabels: false, ticks: '',
         autorange: 'reversed', constrain: 'domain',
       },
       hovermode: 'closest', showlegend: false, dragmode: 'zoom',
@@ -704,9 +694,9 @@ const Clustermap = makeClustermap({
   mainId:   'cmap-main', sideId:   'cmap-side',
   searchId: 'csearch',   suggestId:'csuggest',
   hintId:   'chint',     metaId:   'cmeta',     resetId: 'creset',
-  metaPath: 'data/clustermap/meta.json?v=21',
-  mainPath: 'data/clustermap/corr_int8.bin?v=21',
-  sidePath: 'data/clustermap/corr_side_int8.bin?v=21',
+  metaPath: 'data/clustermap/meta.json?v=22',
+  mainPath: 'data/clustermap/corr_int8.bin?v=22',
+  sidePath: 'data/clustermap/corr_side_int8.bin?v=22',
   mainZmin: -0.2, mainZmax: 0.2,
   sideZmin: -0.5, sideZmax: 0.5,
 });
@@ -717,9 +707,9 @@ const GeneClustermap = makeClustermap({
   mainId:   'gmap-main', sideId:   'gmap-side',
   searchId: 'gsearch',   suggestId:'gsuggest',
   hintId:   'ghint',     metaId:   'gmeta',     resetId: 'greset',
-  metaPath: 'data/genemap/meta.json?v=21',
-  mainPath: 'data/genemap/gene_corr_int8.bin?v=21',
-  sidePath: 'data/genemap/gene_corr_side_int8.bin?v=21',
+  metaPath: 'data/genemap/meta.json?v=22',
+  mainPath: 'data/genemap/gene_corr_int8.bin?v=22',
+  sidePath: 'data/genemap/gene_corr_side_int8.bin?v=22',
   mainZmin: -0.2, mainZmax: 0.2,
   sideZmin: -0.5, sideZmax: 0.5,
 });
@@ -750,7 +740,7 @@ const GeneQuery = (() => {
   let pendingPick = null;   // gene to render after topk lands
 
   function init() {
-    return fetch('data/genes/index.json?v=21').then(r => r.json()).then(idx => {
+    return fetch('data/genes/index.json?v=22').then(r => r.json()).then(idx => {
       genes      = idx.genes || [];
       nPerts     = idx.n_perts;
       K          = idx.k || 25;
@@ -768,7 +758,7 @@ const GeneQuery = (() => {
     if (topk) return Promise.resolve(topk);
     if (topkLoading) return topkLoading;
     META.textContent = 'Loading per-gene query data (~17 MB)…';
-    topkLoading = fetch('data/genes/topk.json?v=21').then(r => r.json()).then(data => {
+    topkLoading = fetch('data/genes/topk.json?v=22').then(r => r.json()).then(data => {
       topk = data;
       META.textContent = `${genes.length.toLocaleString()} genes · ${nPerts.toLocaleString()} perts`;
       return topk;
@@ -986,7 +976,7 @@ const Clusters = (() => {
   function ensureData() {
     if (loaded) return loaded;
     META.textContent = 'Loading cluster summaries…';
-    loaded = fetch('data/clusters/summary.json?v=21').then(r => r.json()).then(d => {
+    loaded = fetch('data/clusters/summary.json?v=22').then(r => r.json()).then(d => {
       data = d;
       META.textContent = meta();
       return d;
