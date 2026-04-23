@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>KOLF2.1J Perturbation Atlas</title>
-  <link rel="stylesheet" href="css/style.css?v=15">
+  <link rel="stylesheet" href="css/style.css?v=16">
   <script src="https://cdn.plot.ly/plotly-cartesian-2.35.2.min.js" charset="utf-8"></script>
 </head>
 <body>
@@ -17,6 +17,7 @@
       <button class="tab active" role="tab" aria-selected="true"  data-tab="mde">MDE</button>
       <button class="tab"        role="tab" aria-selected="false" data-tab="clustermap">Pert clustermap</button>
       <button class="tab"        role="tab" aria-selected="false" data-tab="genemap">Gene clustermap</button>
+      <button class="tab"        role="tab" aria-selected="false" data-tab="genequery">Gene query</button>
       <button class="tab"        role="tab" aria-selected="false" data-tab="clusters">Clusters</button>
     </nav>
   </header>
@@ -112,6 +113,36 @@
       </div>
     </section>
 
+    <!-- Gene query view -->
+    <section id="view-genequery" class="view" role="tabpanel" hidden>
+      <div class="view-controls">
+        <div class="combo">
+          <input id="qsearch" type="search" placeholder="Search expressed gene…" autocomplete="off" spellcheck="false">
+          <ul id="qsuggest" class="suggest" hidden></ul>
+        </div>
+        <span id="qmeta" class="meta">Loading…</span>
+      </div>
+      <div class="view-body gq-body">
+        <div id="qhint" class="placeholder">
+          <p>Pick an expressed gene to see the perturbations that most strongly <strong>up-regulate</strong> or <strong>down-regulate</strong> it (NTC z-score, post-basic-QC universe of all perturbations).</p>
+        </div>
+        <div id="qresults" hidden>
+          <h2 id="q-gene">—</h2>
+          <p id="q-sub" class="meta"></p>
+          <div class="gq-cols">
+            <section>
+              <h3>Top 25 perturbations · highest z-score</h3>
+              <table class="degs"><tbody id="q-up"></tbody></table>
+            </section>
+            <section>
+              <h3>Top 25 perturbations · lowest z-score</h3>
+              <table class="degs"><tbody id="q-dn"></tbody></table>
+            </section>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- Clusters view -->
     <section id="view-clusters" class="view" role="tabpanel" aria-labelledby="tab-clusters" hidden>
       <div class="view-controls">
@@ -133,6 +164,6 @@
     <span><a href="https://doi.org/10.1101/2024.11.03.621734" target="_blank" rel="noopener">Doctor et&nbsp;al., bioRxiv 2024</a> · <a href="https://github.com/y-doctor/KOLF2.1J_Perturbation_Cell_Atlas" target="_blank" rel="noopener">source</a></span>
   </footer>
 
-  <script src="js/main.js?v=15"></script>
+  <script src="js/main.js?v=16"></script>
 </body>
 </html>

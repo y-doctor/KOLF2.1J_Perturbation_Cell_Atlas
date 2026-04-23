@@ -364,6 +364,19 @@ button.mini.on    { background: var(--accent); color: var(--accent-fg); border-c
 }
 .placeholder strong { color: var(--fg); }
 
+/* Gene query layout */
+.gq-body { display: block; padding: 18px 24px; overflow: auto; }
+.gq-body h2 { margin: 0 0 4px; font-size: 22px; font-weight: 600; }
+.gq-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-top: 16px;
+}
+@media (max-width: 720px) {
+  .gq-cols { grid-template-columns: 1fr; }
+}
+
 footer {
   padding: 10px 24px;
   border-top: 1px solid var(--line);

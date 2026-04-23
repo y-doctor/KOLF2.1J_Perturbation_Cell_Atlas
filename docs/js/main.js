@@ -1,12 +1,13 @@
 /* KOLF2.1J Perturbation Atlas viewer
    Tabs: MDE (#mde), Pert clustermap (#clustermap),
-         Gene clustermap (#genemap), Clusters (#clusters).
+         Gene clustermap (#genemap), Gene query (#genequery),
+         Clusters (#clusters).
 */
 
 // ============================================================================
 // Router
 // ============================================================================
-const TABS = ['mde', 'clustermap', 'genemap', 'clusters'];
+const TABS = ['mde', 'clustermap', 'genemap', 'genequery', 'clusters'];
 const tabButtons = document.querySelectorAll('.tab');
 const views      = Object.fromEntries(
   TABS.map(name => [name, document.getElementById(`view-${name}`)])
@@ -30,6 +31,7 @@ function showTab(name) {
   if (name === 'mde')        MDE.onShow();
   if (name === 'clustermap') Clustermap.onShow();
   if (name === 'genemap')    GeneClustermap.onShow();
+  if (name === 'genequery')  GeneQuery.onShow();
   if (name === 'clusters')   Clusters.onShow();
 }
 
@@ -63,8 +65,8 @@ const MDE = (() => {
 
   let fitnessCache = null;
   let signaturesCache = null;
-  function ensureFitness()    { return fitnessCache    || (fitnessCache    = fetch('data/mde/fitness.json?v=15').then(r => r.json())); }
-  function ensureSignatures() { return signaturesCache || (signaturesCache = fetch('data/mde/signatures.json?v=15').then(r => r.json())); }
+  function ensureFitness()    { return fitnessCache    || (fitnessCache    = fetch('data/mde/fitness.json?v=16').then(r => r.json())); }
+  function ensureSignatures() { return signaturesCache || (signaturesCache = fetch('data/mde/signatures.json?v=16').then(r => r.json())); }
 
   let data = [];
   let leidenLabels = {}, hdbscanLabels = {};
@@ -262,17 +264,78 @@ const MDE = (() => {
     }
   }
 
+  function renderDegsTable(tbody, rows) {
+    tbody.innerHTML = '';
+    if (!rows || rows.length === 0) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td colspan="2" style="color:var(--muted)">—</td>';
+      tbody.appendChild(tr);
+      return;
+    }
+    for (const r of rows) {
+      const tr = document.createElement('tr');
+      const g = document.createElement('td'); g.textContent = r.g;
+      const z = document.createElement('td');
+      z.textContent = (r.z >= 0 ? '+' : '') + r.z.toFixed(2);
+      tr.appendChild(g); tr.appendChild(z);
+      tbody.appendChild(tr);
+    }
+  }
+  function renderSimList(ol, names) {
+    ol.innerHTML = '';
+    if (!names || names.length === 0) {
+      const li = document.createElement('li');
+      li.innerHTML = '<span class="g" style="color:var(--muted)">—</span>';
+      ol.appendChild(li);
+      return;
+    }
+    for (const name of names) {
+      const i = indexByGene.get(name);
+      const li = document.createElement('li');
+      const g = document.createElement('span');
+      g.className = 'g';
+      g.textContent = name;
+      if (i != null) g.addEventListener('click', () => focusGene(i, { zoom: true }));
+      li.appendChild(g);
+      ol.appendChild(li);
+    }
+  }
+
   function openPanel(idx) {
     const r = data[idx];
-    P.gene.textContent    = r.g;
+    const gene = r.g;
+    P.gene.textContent    = gene;
     P.leiden.textContent  = panelClusterText(r, 'l');
     P.hdbText.textContent = panelClusterText(r, 'h');
     setHdbBtnState();
-    P.ndegs.textContent = fmtWithRank(fmtInt(r.n), nDegsRank.get(r.g), totalRanked);
-    P.edist.textContent = fmtWithRank(fmtFloat(r.e, 2), edistRank.get(r.g), totalRanked);
+    P.ndegs.textContent = fmtWithRank(fmtInt(r.n), nDegsRank.get(gene), totalRanked);
+    P.edist.textContent = fmtWithRank(fmtFloat(r.e, 2), edistRank.get(gene), totalRanked);
+    P.fit.textContent   = '…';
+    renderDegsTable(P.up, null);
+    renderDegsTable(P.dn, null);
+    renderSimList(P.sim, null);
     renderNeighbors(P.nbr, nearestNeighbors(idx, 10));
     PANEL.classList.add('open');
     PANEL.setAttribute('aria-hidden', 'false');
+
+    ensureFitness().then(fit => {
+      const f = fit.genes && fit.genes[gene];
+      if (!f) { P.fit.textContent = '—'; return; }
+      const sign = f.z >= 0 ? '+' : '';
+      const rank = f.z >= 0 ? `pos #${f.rp.toLocaleString()}` : `neg #${f.rn.toLocaleString()}`;
+      P.fit.textContent = `${sign}${f.z.toFixed(2)} · ${rank} / ${fit.n_total.toLocaleString()}`;
+    }).catch(e => { console.error('fitness load failed', e); P.fit.textContent = '—'; });
+
+    ensureSignatures().then(sigs => {
+      const s = sigs[gene];
+      if (!s) { renderDegsTable(P.up, []); renderDegsTable(P.dn, []); renderSimList(P.sim, []); return; }
+      renderDegsTable(P.up, s.up);
+      renderDegsTable(P.dn, s.dn);
+      renderSimList(P.sim, s.neighbors);
+    }).catch(e => {
+      console.error('signatures load failed', e);
+      renderDegsTable(P.up, []); renderDegsTable(P.dn, []); renderSimList(P.sim, []);
+    });
   }
   function closePanel() {
     PANEL.classList.remove('open');
@@ -292,7 +355,7 @@ const MDE = (() => {
   }
 
   function init() {
-    return fetch('data/mde.json?v=15').then(r => r.json()).then(payload => {
+    return fetch('data/mde.json?v=16').then(r => r.json()).then(payload => {
       data = payload.points;
       leidenLabels  = payload.leiden_labels  || {};
       hdbscanLabels = payload.hdbscan_labels || {};
@@ -641,9 +704,9 @@ const Clustermap = makeClustermap({
   mainId:   'cmap-main', sideId:   'cmap-side',
   searchId: 'csearch',   suggestId:'csuggest',
   hintId:   'chint',     metaId:   'cmeta',     resetId: 'creset',
-  metaPath: 'data/clustermap/meta.json?v=15',
-  mainPath: 'data/clustermap/corr_int8.bin?v=15',
-  sidePath: 'data/clustermap/corr_side_int8.bin?v=15',
+  metaPath: 'data/clustermap/meta.json?v=16',
+  mainPath: 'data/clustermap/corr_int8.bin?v=16',
+  sidePath: 'data/clustermap/corr_side_int8.bin?v=16',
   mainZmin: -0.2, mainZmax: 0.2,
   sideZmin: -0.5, sideZmax: 0.5,
 });
@@ -654,12 +717,160 @@ const GeneClustermap = makeClustermap({
   mainId:   'gmap-main', sideId:   'gmap-side',
   searchId: 'gsearch',   suggestId:'gsuggest',
   hintId:   'ghint',     metaId:   'gmeta',     resetId: 'greset',
-  metaPath: 'data/genemap/meta.json?v=15',
-  mainPath: 'data/genemap/gene_corr_int8.bin?v=15',
-  sidePath: 'data/genemap/gene_corr_side_int8.bin?v=15',
+  metaPath: 'data/genemap/meta.json?v=16',
+  mainPath: 'data/genemap/gene_corr_int8.bin?v=16',
+  sidePath: 'data/genemap/gene_corr_side_int8.bin?v=16',
   mainZmin: -0.2, mainZmax: 0.2,
   sideZmin: -0.5, sideZmax: 0.5,
 });
+
+// ============================================================================
+// Gene query tab — for any expressed gene, show top 25 perts with highest
+// and lowest mean NTC z-score (post-basic-QC universe of ~11,687 perts).
+// ============================================================================
+const GeneQuery = (() => {
+  const SEARCH = document.getElementById('qsearch');
+  const SUG    = document.getElementById('qsuggest');
+  const META   = document.getElementById('qmeta');
+  const HINT   = document.getElementById('qhint');
+  const RESULTS= document.getElementById('qresults');
+  const GENE   = document.getElementById('q-gene');
+  const SUB    = document.getElementById('q-sub');
+  const UP     = document.getElementById('q-up');
+  const DN     = document.getElementById('q-dn');
+
+  let genes = [];
+  let nPerts = 0, K = 25;
+  let topk = null;          // lazy-loaded big payload
+  let topkLoading = null;
+  let activeSugg = -1;
+  let pendingPick = null;   // gene to render after topk lands
+
+  function init() {
+    return fetch('data/genes/index.json?v=16').then(r => r.json()).then(idx => {
+      genes  = idx.genes || [];
+      nPerts = idx.n_perts;
+      K      = idx.k || 25;
+      META.textContent = `${genes.length.toLocaleString()} expressed genes · ${nPerts.toLocaleString()} perturbations`;
+      attachEvents();
+    }).catch(err => {
+      META.textContent = `Failed to load gene index: ${err.message || err}`;
+    });
+  }
+  function onShow() { if (SEARCH) SEARCH.focus(); }
+
+  function ensureTopk() {
+    if (topk) return Promise.resolve(topk);
+    if (topkLoading) return topkLoading;
+    META.textContent = 'Loading per-gene query data (~17 MB)…';
+    topkLoading = fetch('data/genes/topk.json?v=16').then(r => r.json()).then(data => {
+      topk = data;
+      META.textContent = `${genes.length.toLocaleString()} genes · ${nPerts.toLocaleString()} perts`;
+      return topk;
+    });
+    return topkLoading;
+  }
+
+  function attachEvents() {
+    SEARCH.addEventListener('input',   () => updateSuggest(SEARCH.value));
+    SEARCH.addEventListener('focus',   () => updateSuggest(SEARCH.value));
+    SEARCH.addEventListener('blur',    () => setTimeout(closeSuggest, 120));
+    SEARCH.addEventListener('keydown', onSearchKey);
+  }
+
+  function fuzzy(q) {
+    q = q.trim().toUpperCase();
+    if (!q) return genes.slice(0, 12);
+    const eq  = genes.filter(g => g.toUpperCase() === q);
+    const pre = genes.filter(g => g.toUpperCase().startsWith(q) && g.toUpperCase() !== q);
+    const sub = genes.filter(g => !g.toUpperCase().startsWith(q) && g.toUpperCase().includes(q));
+    return [...eq, ...pre, ...sub].slice(0, 12);
+  }
+  function updateSuggest(q) {
+    const list = fuzzy(q);
+    if (!list.length) { closeSuggest(); return; }
+    SUG.innerHTML = '';
+    list.forEach(p => {
+      const li = document.createElement('li');
+      const idx = q ? p.toUpperCase().indexOf(q.trim().toUpperCase()) : -1;
+      if (idx >= 0 && q.trim()) {
+        const a = p.slice(0, idx);
+        const m = p.slice(idx, idx + q.trim().length);
+        const z = p.slice(idx + q.trim().length);
+        li.innerHTML = `${a}<mark>${m}</mark>${z}`;
+      } else { li.textContent = p; }
+      li.addEventListener('mousedown', e => { e.preventDefault(); selectGene(p); });
+      SUG.appendChild(li);
+    });
+    activeSugg = -1;
+    SUG.hidden = false;
+  }
+  function closeSuggest() { SUG.hidden = true; activeSugg = -1; }
+  function onSearchKey(e) {
+    if (SUG.hidden) return;
+    const items = SUG.querySelectorAll('li');
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      activeSugg = Math.min(items.length - 1, activeSugg + 1);
+      items.forEach((it,i) => it.classList.toggle('active', i === activeSugg));
+      items[activeSugg]?.scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      activeSugg = Math.max(0, activeSugg - 1);
+      items.forEach((it,i) => it.classList.toggle('active', i === activeSugg));
+      items[activeSugg]?.scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const pick = activeSugg >= 0 ? items[activeSugg].textContent
+                                   : (items[0] && items[0].textContent);
+      if (pick) selectGene(pick);
+    } else if (e.key === 'Escape') {
+      closeSuggest();
+    }
+  }
+
+  function fillTable(tbody, rows) {
+    tbody.innerHTML = '';
+    if (!rows || rows.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="2" style="color:var(--muted)">—</td></tr>';
+      return;
+    }
+    for (const r of rows) {
+      const [name, z] = r;
+      const tr = document.createElement('tr');
+      const g = document.createElement('td'); g.textContent = name;
+      const v = document.createElement('td'); v.textContent = (z >= 0 ? '+' : '') + z.toFixed(2);
+      tr.appendChild(g); tr.appendChild(v);
+      tbody.appendChild(tr);
+    }
+  }
+
+  function selectGene(g) {
+    if (!genes.includes(g)) return;
+    SEARCH.value = g;
+    closeSuggest();
+    HINT.hidden = true;
+    RESULTS.hidden = false;
+    GENE.textContent = g;
+    SUB.textContent = 'loading…';
+    fillTable(UP, []); fillTable(DN, []);
+    ensureTopk().then(d => {
+      const entry = d[g];
+      if (!entry) {
+        SUB.textContent = 'no data';
+        fillTable(UP, []); fillTable(DN, []);
+        return;
+      }
+      SUB.textContent = `top ${K} perts up · top ${K} perts down · NTC z-score across ${nPerts.toLocaleString()} perts`;
+      fillTable(UP, entry.up);
+      fillTable(DN, entry.dn);
+    }).catch(err => {
+      SUB.textContent = `load failed: ${err.message || err}`;
+    });
+  }
+
+  return { init, onShow };
+})();
 
 // ============================================================================
 // Clusters tab (placeholder until z-score matrix lands)
@@ -676,6 +887,7 @@ const Clusters = (() => {
 MDE.init();
 Clustermap.init();
 GeneClustermap.init();
+GeneQuery.init();
 Clusters.init();
 
 // Initial route
