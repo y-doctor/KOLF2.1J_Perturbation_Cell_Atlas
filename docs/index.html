@@ -3,48 +3,91 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>KOLF2.1J Perturbation Atlas — MDE</title>
-  <link rel="stylesheet" href="css/style.css?v=5">
+  <title>KOLF2.1J Perturbation Atlas</title>
+  <link rel="stylesheet" href="css/style.css?v=6">
   <script src="https://cdn.plot.ly/plotly-basic-2.35.2.min.js" charset="utf-8"></script>
 </head>
 <body>
   <header>
     <div class="title">
       <h1>KOLF2.1J Perturbation Atlas</h1>
-      <p>MDE of 1,655 strong perturbations</p>
+      <p>1,655 strong perturbations</p>
     </div>
-    <div class="controls">
-      <input id="search" type="search" placeholder="Search gene…" autocomplete="off" spellcheck="false">
-      <button id="reset" title="Reset view">Reset</button>
-    </div>
+    <nav class="tabs" role="tablist" aria-label="Views">
+      <button class="tab active" role="tab" aria-selected="true"  data-tab="mde">MDE</button>
+      <button class="tab"        role="tab" aria-selected="false" data-tab="volcano">Volcano</button>
+      <button class="tab"        role="tab" aria-selected="false" data-tab="clusters">Clusters</button>
+    </nav>
   </header>
-  <main>
-    <div id="plot"></div>
-    <div id="empty" class="hint" hidden>No match.</div>
-    <aside id="panel" class="panel" aria-hidden="true">
-      <button id="panel-close" class="panel-close" aria-label="Close">&times;</button>
-      <div class="panel-body">
-        <h2 id="p-gene">—</h2>
-        <dl class="kv">
-          <dt>Leiden</dt>       <dd id="p-leiden">—</dd>
-          <dt>HDBSCAN</dt>      <dd id="p-hdb">
-            <span id="p-hdb-text">—</span>
-            <button id="p-hdb-hl" class="mini" hidden>highlight cluster</button>
-          </dd>
-          <dt>n DEGs</dt>       <dd id="p-ndegs">—</dd>
-          <dt>edist (vs NTC)</dt><dd id="p-edist">—</dd>
-        </dl>
 
-        <section>
-          <h3>Nearest neighbors (MDE)</h3>
-          <ol class="neighbors" id="p-nbr"></ol>
-        </section>
+  <main>
+    <!-- MDE view -->
+    <section id="view-mde" class="view active" role="tabpanel" aria-labelledby="tab-mde">
+      <div class="view-controls">
+        <input id="search" type="search" placeholder="Search gene…" autocomplete="off" spellcheck="false">
+        <button id="reset" title="Reset view">Reset</button>
       </div>
-    </aside>
+      <div class="view-body">
+        <div id="plot"></div>
+        <div id="empty" class="hint" hidden>No match.</div>
+        <aside id="panel" class="panel" aria-hidden="true">
+          <button id="panel-close" class="panel-close" aria-label="Close">&times;</button>
+          <div class="panel-body">
+            <h2 id="p-gene">—</h2>
+            <dl class="kv">
+              <dt>Leiden</dt>      <dd id="p-leiden">—</dd>
+              <dt>HDBSCAN</dt>     <dd id="p-hdb">
+                <span id="p-hdb-text">—</span>
+                <button id="p-hdb-hl" class="mini" hidden>highlight cluster</button>
+              </dd>
+              <dt>n DEGs</dt>      <dd id="p-ndegs">—</dd>
+              <dt>edist (vs NTC)</dt><dd id="p-edist">—</dd>
+            </dl>
+            <section>
+              <h3>Nearest neighbors (MDE)</h3>
+              <ol class="neighbors" id="p-nbr"></ol>
+            </section>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- Volcano view -->
+    <section id="view-volcano" class="view" role="tabpanel" aria-labelledby="tab-volcano" hidden>
+      <div class="view-controls">
+        <div class="combo">
+          <input id="vsearch" type="search" placeholder="Search perturbation…" autocomplete="off" spellcheck="false">
+          <ul id="vsuggest" class="suggest" hidden></ul>
+        </div>
+        <span id="vmeta" class="meta"></span>
+      </div>
+      <div class="view-body">
+        <div id="vplot"></div>
+        <div id="vhint" class="hint">Pick a perturbation to view its volcano.</div>
+      </div>
+    </section>
+
+    <!-- Clusters view -->
+    <section id="view-clusters" class="view" role="tabpanel" aria-labelledby="tab-clusters" hidden>
+      <div class="view-controls">
+        <div class="toggle" role="radiogroup" aria-label="Cluster type">
+          <button class="seg active" data-ctype="leiden"  role="radio" aria-checked="true">Leiden (62)</button>
+          <button class="seg"        data-ctype="hdbscan" role="radio" aria-checked="false">HDBSCAN (30)</button>
+        </div>
+      </div>
+      <div class="view-body">
+        <div id="cwait" class="placeholder">
+          <p><strong>Cluster browser coming soon.</strong></p>
+          <p>Waiting on the z-score matrix from the slurm job (~3 h ETA). Once it lands, this tab will show each cluster's manual label, member count, and the top 30 up/down genes by averaged NTC z-score across members.</p>
+        </div>
+      </div>
+    </section>
   </main>
+
   <footer>
-    <span>n = 1,655 · <a href="https://doi.org/10.1101/2024.11.03.621734" target="_blank" rel="noopener">Doctor et&nbsp;al., bioRxiv 2024</a> · <a href="https://github.com/y-doctor/KOLF2.1J_Perturbation_Cell_Atlas" target="_blank" rel="noopener">source</a></span>
+    <span><a href="https://doi.org/10.1101/2024.11.03.621734" target="_blank" rel="noopener">Doctor et&nbsp;al., bioRxiv 2024</a> · <a href="https://github.com/y-doctor/KOLF2.1J_Perturbation_Cell_Atlas" target="_blank" rel="noopener">source</a></span>
   </footer>
-  <script src="js/main.js?v=5"></script>
+
+  <script src="js/main.js?v=6"></script>
 </body>
 </html>
