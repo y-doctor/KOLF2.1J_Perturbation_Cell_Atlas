@@ -281,7 +281,7 @@ const MDE = (() => {
   }
 
   function init() {
-    return fetch('data/mde.json?v=11').then(r => r.json()).then(payload => {
+    return fetch('data/mde.json?v=12').then(r => r.json()).then(payload => {
       data = payload.points;
       leidenLabels  = payload.leiden_labels  || {};
       hdbscanLabels = payload.hdbscan_labels || {};
@@ -364,9 +364,9 @@ const Clustermap = (() => {
     HINT.hidden = false;
     HINT.textContent = 'Loading correlation matrices (~2.8 MB)…';
     return Promise.all([
-      fetch('data/clustermap/meta.json?v=11').then(r => r.json()),
-      fetch('data/clustermap/corr_int8.bin?v=11').then(r => r.arrayBuffer()),
-      fetch('data/clustermap/corr_side_int8.bin?v=11').then(r => r.arrayBuffer()),
+      fetch('data/clustermap/meta.json?v=12').then(r => r.json()),
+      fetch('data/clustermap/corr_int8.bin?v=12').then(r => r.arrayBuffer()),
+      fetch('data/clustermap/corr_side_int8.bin?v=12').then(r => r.arrayBuffer()),
     ]).then(([m, mainBuf, sideBuf]) => {
       meta  = m;
       perts = m.perts;
@@ -418,8 +418,8 @@ const Clustermap = (() => {
       xaxis: 'x', yaxis: 'y',
       colorscale: hdbScale, zmin: 0, zmax: 1,
       showscale: false,
-      customdata: customLabels.map(l => [l]),
-      hovertemplate: '<b>%{y}</b><br>HDBSCAN %{customdata[0]}<extra></extra>',
+      text: customLabels.map(l => [l]),
+      hovertemplate: '<b>%{y}</b><br>HDBSCAN %{text}<extra></extra>',
     };
     const heatTrace = {
       type: 'heatmap',
@@ -464,8 +464,8 @@ const Clustermap = (() => {
       xaxis: 'x', yaxis: 'y',
       colorscale: hdbScale, zmin: 0, zmax: 1,
       showscale: false,
-      customdata: customLabels.map(l => [l]),
-      hovertemplate: '<b>%{y}</b><br>HDBSCAN %{customdata[0]}<extra></extra>',
+      text: customLabels.map(l => [l]),
+      hovertemplate: '<b>%{y}</b><br>HDBSCAN %{text}<extra></extra>',
     };
     const heatTrace = {
       type: 'heatmap',
@@ -474,7 +474,11 @@ const Clustermap = (() => {
       colorscale: 'RdBu', reversescale: true,    // inverted: red=high, blue=low
       zmin: -0.5, zmax: 0.5,                      // wider range for the cluster blocks
       hovertemplate: '<b>%{y}</b> × <b>%{x}</b><br>r = %{z:.3f}<extra></extra>',
-      showscale: false,
+      colorbar: {
+        title: { text: 'Pearson r', font: { size: 10 } },
+        thickness: 8, len: 0.5, x: 1.02, xanchor: 'left',
+        tickfont: { size: 10 },
+      },
     };
 
     // Cluster boundary lines on side heatmap (use xaxis2/yaxis)
@@ -490,7 +494,7 @@ const Clustermap = (() => {
     }
 
     const layout = {
-      margin: { l: 12, r: 12, t: 12, b: 12 },
+      margin: { l: 12, r: 70, t: 12, b: 12 },                   // room for colorbar
       xaxis:  { domain: [0, 0.04], showticklabels: false, ticks: '', fixedrange: true },
       xaxis2: { domain: [0.06, 1.0], showticklabels: false, ticks: '',
                 scaleanchor: 'y', constrain: 'domain' },          // square cells
