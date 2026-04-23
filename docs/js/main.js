@@ -66,8 +66,8 @@ const MDE = (() => {
 
   let fitnessCache = null;
   let signaturesCache = null;
-  function ensureFitness()    { return fitnessCache    || (fitnessCache    = fetch('data/mde/fitness.json?v=23').then(r => r.json())); }
-  function ensureSignatures() { return signaturesCache || (signaturesCache = fetch('data/mde/signatures.json?v=23').then(r => r.json())); }
+  function ensureFitness()    { return fitnessCache    || (fitnessCache    = fetch('data/mde/fitness.json?v=24').then(r => r.json())); }
+  function ensureSignatures() { return signaturesCache || (signaturesCache = fetch('data/mde/signatures.json?v=24').then(r => r.json())); }
 
   let data = [];
   let leidenLabels = {}, hdbscanLabels = {};
@@ -356,7 +356,7 @@ const MDE = (() => {
   }
 
   function init() {
-    return fetch('data/mde.json?v=23').then(r => r.json()).then(payload => {
+    return fetch('data/mde.json?v=24').then(r => r.json()).then(payload => {
       data = payload.points;
       leidenLabels  = payload.leiden_labels  || {};
       hdbscanLabels = payload.hdbscan_labels || {};
@@ -695,9 +695,9 @@ const Clustermap = makeClustermap({
   mainId:   'cmap-main', sideId:   'cmap-side',
   searchId: 'csearch',   suggestId:'csuggest',
   hintId:   'chint',     metaId:   'cmeta',     resetId: 'creset',
-  metaPath: 'data/clustermap/meta.json?v=23',
-  mainPath: 'data/clustermap/corr_int8.bin?v=23',
-  sidePath: 'data/clustermap/corr_side_int8.bin?v=23',
+  metaPath: 'data/clustermap/meta.json?v=24',
+  mainPath: 'data/clustermap/corr_int8.bin?v=24',
+  sidePath: 'data/clustermap/corr_side_int8.bin?v=24',
   mainZmin: -0.2, mainZmax: 0.2,
   sideZmin: -0.5, sideZmax: 0.5,
 });
@@ -708,9 +708,9 @@ const GeneClustermap = makeClustermap({
   mainId:   'gmap-main', sideId:   'gmap-side',
   searchId: 'gsearch',   suggestId:'gsuggest',
   hintId:   'ghint',     metaId:   'gmeta',     resetId: 'greset',
-  metaPath: 'data/genemap/meta.json?v=23',
-  mainPath: 'data/genemap/gene_corr_int8.bin?v=23',
-  sidePath: 'data/genemap/gene_corr_side_int8.bin?v=23',
+  metaPath: 'data/genemap/meta.json?v=24',
+  mainPath: 'data/genemap/gene_corr_int8.bin?v=24',
+  sidePath: 'data/genemap/gene_corr_side_int8.bin?v=24',
   mainZmin: -0.2, mainZmax: 0.2,
   sideZmin: -0.5, sideZmax: 0.5,
 });
@@ -739,9 +739,11 @@ const GeneQuery = (() => {
   let topkLoading = null;
   let activeSugg = -1;
   let pendingPick = null;   // gene to render after topk lands
+  let autoOpened = false;   // run the auto-pick once per session
+  let initPromise = null;
 
   function init() {
-    return fetch('data/genes/index.json?v=23').then(r => r.json()).then(idx => {
+    initPromise = fetch('data/genes/index.json?v=24').then(r => r.json()).then(idx => {
       genes      = idx.genes || [];
       nPerts     = idx.n_perts;
       K          = idx.k || 25;
@@ -752,14 +754,28 @@ const GeneQuery = (() => {
     }).catch(err => {
       META.textContent = `Failed to load gene index: ${err.message || err}`;
     });
+    return initPromise;
   }
-  function onShow() { if (SEARCH) SEARCH.focus(); }
+  function onShow() {
+    if (SEARCH) SEARCH.focus();
+    // On first visit, auto-open to POU5F1 for immediate context.
+    // Wait for the gene index to land if it's still loading.
+    if (!autoOpened && initPromise) {
+      initPromise.then(() => {
+        if (autoOpened) return;
+        if (genes.includes('POU5F1') && RESULTS && RESULTS.hidden) {
+          autoOpened = true;
+          selectGene('POU5F1');
+        }
+      });
+    }
+  }
 
   function ensureTopk() {
     if (topk) return Promise.resolve(topk);
     if (topkLoading) return topkLoading;
     META.textContent = 'Loading per-gene query data (~17 MB)…';
-    topkLoading = fetch('data/genes/topk.json?v=23').then(r => r.json()).then(data => {
+    topkLoading = fetch('data/genes/topk.json?v=24').then(r => r.json()).then(data => {
       topk = data;
       META.textContent = `${genes.length.toLocaleString()} genes · ${nPerts.toLocaleString()} perts`;
       return topk;
@@ -970,14 +986,15 @@ const Clusters = (() => {
   const FILTER = document.getElementById('cfilter');
 
   let data = null;              // { leiden: [...], hdbscan: [...], k_top }
-  let ctype = 'leiden';
+  const ctype = 'hdbscan';      // Leiden removed from UI; HDBSCAN only
+  const DEFAULT_LABEL = 'POU domain';
   let selectedId = null;
   let loaded = null;            // promise
 
   function ensureData() {
     if (loaded) return loaded;
     META.textContent = 'Loading cluster summaries…';
-    loaded = fetch('data/clusters/summary.json?v=23').then(r => r.json()).then(d => {
+    loaded = fetch('data/clusters/summary.json?v=24').then(r => r.json()).then(d => {
       data = d;
       META.textContent = meta();
       return d;
@@ -989,8 +1006,8 @@ const Clusters = (() => {
   }
 
   function meta() {
-    const nL = data.leiden.length, nH = data.hdbscan.length;
-    return `Leiden ${nL} · HDBSCAN ${nH} · top ${data.k_top} up/dn per cluster`;
+    const nH = data.hdbscan.length;
+    return `${nH} HDBSCAN clusters · top ${data.k_top} up/dn per cluster`;
   }
 
   function clusterLabel(c) {
@@ -1069,24 +1086,19 @@ const Clusters = (() => {
   }
 
   function attach() {
-    document.querySelectorAll('#view-clusters .seg').forEach(btn => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('#view-clusters .seg').forEach(b => {
-          const on = (b === btn);
-          b.classList.toggle('active', on);
-          b.setAttribute('aria-checked', on);
-        });
-        ctype = btn.dataset.ctype;
-        selectedId = null;
-        HINT.hidden = false; RES.hidden = true;
-        renderList();
-      });
-    });
     FILTER.addEventListener('input', renderList);
   }
 
   function init() { attach(); }
-  function onShow() { ensureData().then(renderList); }
+  function onShow() {
+    ensureData().then(() => {
+      renderList();
+      if (selectedId == null) {
+        const def = data.hdbscan.find(c => (c.label || '').toLowerCase() === DEFAULT_LABEL.toLowerCase());
+        if (def) pick(def.id);
+      }
+    });
+  }
   return { init, onShow };
 })();
 
@@ -1117,8 +1129,8 @@ const Panel = (() => {
     if (loaded) return loaded;
     META.textContent = 'Loading cluster means…';
     loaded = Promise.all([
-      fetch('data/clusters/means_meta.json?v=23').then(r => r.json()),
-      fetch('data/clusters/means.bin?v=23').then(r => r.arrayBuffer()),
+      fetch('data/clusters/means_meta.json?v=24').then(r => r.json()),
+      fetch('data/clusters/means.bin?v=24').then(r => r.arrayBuffer()),
     ]).then(([m, buf]) => {
       meta = m;
       nL = meta.leiden.length;

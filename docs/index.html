@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>KOLF2.1J Perturbation Atlas</title>
-  <link rel="stylesheet" href="css/style.css?v=23">
+  <link rel="stylesheet" href="css/style.css?v=24">
   <script src="https://cdn.plot.ly/plotly-cartesian-2.35.2.min.js" charset="utf-8"></script>
 </head>
 <body>
@@ -148,12 +148,8 @@
     <!-- Clusters view -->
     <section id="view-clusters" class="view" role="tabpanel" aria-labelledby="tab-clusters" hidden>
       <div class="view-controls">
-        <div class="toggle" role="radiogroup" aria-label="Cluster type">
-          <button class="seg active" data-ctype="leiden"  role="radio" aria-checked="true">Leiden</button>
-          <button class="seg"        data-ctype="hdbscan" role="radio" aria-checked="false">HDBSCAN</button>
-        </div>
         <div class="search-wrap">
-          <input id="cfilter" type="search" placeholder="Filter by label or id…" autocomplete="off" spellcheck="false">
+          <input id="cfilter" type="search" placeholder="Filter HDBSCAN clusters…" autocomplete="off" spellcheck="false">
         </div>
         <span id="cmeta2" class="meta">Loading…</span>
       </div>
@@ -214,6 +210,6 @@
     <span><a href="https://doi.org/10.1101/2024.11.03.621734" target="_blank" rel="noopener">Doctor et&nbsp;al., bioRxiv 2024</a> · <a href="https://github.com/y-doctor/KOLF2.1J_Perturbation_Cell_Atlas" target="_blank" rel="noopener">source</a></span>
   </footer>
 
-  <script src="js/main.js?v=23"></script>
+  <script src="js/main.js?v=24"></script>
 </body>
 </html>
