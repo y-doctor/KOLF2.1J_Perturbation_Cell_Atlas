@@ -7,12 +7,13 @@
   const PCLOSE = document.getElementById('panel-close');
 
   const P = {
-    gene:   document.getElementById('p-gene'),
-    leiden: document.getElementById('p-leiden'),
-    hdb:    document.getElementById('p-hdb'),
-    ndegs:  document.getElementById('p-ndegs'),
-    edist:  document.getElementById('p-edist'),
-    nbr:    document.getElementById('p-nbr'),
+    gene:    document.getElementById('p-gene'),
+    leiden:  document.getElementById('p-leiden'),
+    hdbText: document.getElementById('p-hdb-text'),
+    hdbBtn:  document.getElementById('p-hdb-hl'),
+    ndegs:   document.getElementById('p-ndegs'),
+    edist:   document.getElementById('p-edist'),
+    nbr:     document.getElementById('p-nbr'),
   };
 
   // State
@@ -25,6 +26,7 @@
   let totalRanked = 0;
   let xRange = null, yRange = null;
   let selectedIdx = null;
+  let hdbscanHighlightOn = false;
 
   const GRAY = '#c7c7c7';
   function clusterColor(v) {
@@ -148,13 +150,9 @@
   function focusGene(idx, { zoom = false } = {}) {
     const r = data[idx];
     selectedIdx = idx;
-
-    // Highlight HDBSCAN cluster members if this point is in a real cluster
-    let sel = [idx];
-    if (r.h !== -1 && hdbscanMembers.has(r.h)) {
-      sel = hdbscanMembers.get(r.h).slice();
-    }
-    Plotly.restyle(PLOT, { selectedpoints: [sel] });
+    // Always reset HDBSCAN highlight when switching genes
+    hdbscanHighlightOn = false;
+    Plotly.restyle(PLOT, { selectedpoints: [null] });
 
     const relayout = { annotations: annotateSelected(r) };
     if (zoom) {
@@ -168,8 +166,30 @@
 
   function clearHighlight() {
     selectedIdx = null;
+    hdbscanHighlightOn = false;
     Plotly.restyle(PLOT, { selectedpoints: [null] });
     Plotly.relayout(PLOT, { annotations: [] });
+  }
+
+  function setHdbBtnState() {
+    const r = selectedIdx != null ? data[selectedIdx] : null;
+    const eligible = r && r.h !== -1 && hdbscanMembers.has(r.h);
+    P.hdbBtn.hidden = !eligible;
+    P.hdbBtn.classList.toggle('on', hdbscanHighlightOn);
+    P.hdbBtn.textContent = hdbscanHighlightOn ? 'clear' : 'highlight cluster';
+  }
+
+  function toggleHdbHighlight() {
+    if (selectedIdx == null) return;
+    const r = data[selectedIdx];
+    if (r.h === -1 || !hdbscanMembers.has(r.h)) return;
+    hdbscanHighlightOn = !hdbscanHighlightOn;
+    if (hdbscanHighlightOn) {
+      Plotly.restyle(PLOT, { selectedpoints: [hdbscanMembers.get(r.h).slice()] });
+    } else {
+      Plotly.restyle(PLOT, { selectedpoints: [null] });
+    }
+    setHdbBtnState();
   }
 
   function searchHighlight(query) {
@@ -233,11 +253,12 @@
 
   function openPanel(idx) {
     const r = data[idx];
-    P.gene.textContent   = r.g;
-    P.leiden.textContent = panelClusterText(r, 'l');
-    P.hdb.textContent    = panelClusterText(r, 'h');
-    P.ndegs.textContent  = fmtWithRank(fmtInt(r.n), nDegsRank.get(r.g), totalRanked);
-    P.edist.textContent  = fmtWithRank(fmtFloat(r.e, 2), edistRank.get(r.g), totalRanked);
+    P.gene.textContent    = r.g;
+    P.leiden.textContent  = panelClusterText(r, 'l');
+    P.hdbText.textContent = panelClusterText(r, 'h');
+    setHdbBtnState();
+    P.ndegs.textContent   = fmtWithRank(fmtInt(r.n), nDegsRank.get(r.g), totalRanked);
+    P.edist.textContent   = fmtWithRank(fmtFloat(r.e, 2), edistRank.get(r.g), totalRanked);
 
     renderNeighbors(P.nbr, nearestNeighbors(idx, 10));
 
@@ -257,6 +278,7 @@
   });
   RESET.addEventListener('click', resetView);
   PCLOSE.addEventListener('click', () => { closePanel(); clearHighlight(); });
+  P.hdbBtn.addEventListener('click', toggleHdbHighlight);
 
   function attachPlotEvents() {
     PLOT.on('plotly_click', ev => {
@@ -267,7 +289,7 @@
   }
 
   // --- Load ---
-  fetch('data/mde.json?v=4')
+  fetch('data/mde.json?v=5')
     .then(r => r.json())
     .then(payload => {
       data = payload.points;

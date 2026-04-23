@@ -189,7 +189,7 @@ main {
   font-size: 13px;
 }
 .kv dt { color: var(--muted); }
-.kv dd { margin: 0; color: var(--fg); }
+.kv dd { margin: 0; color: var(--fg); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
 table.degs {
   width: 100%;

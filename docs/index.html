@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>KOLF2.1J Perturbation Atlas — MDE</title>
-  <link rel="stylesheet" href="css/style.css?v=4">
+  <link rel="stylesheet" href="css/style.css?v=5">
   <script src="https://cdn.plot.ly/plotly-basic-2.35.2.min.js" charset="utf-8"></script>
 </head>
 <body>
@@ -27,7 +27,10 @@
         <h2 id="p-gene">—</h2>
         <dl class="kv">
           <dt>Leiden</dt>       <dd id="p-leiden">—</dd>
-          <dt>HDBSCAN</dt>      <dd id="p-hdb">—</dd>
+          <dt>HDBSCAN</dt>      <dd id="p-hdb">
+            <span id="p-hdb-text">—</span>
+            <button id="p-hdb-hl" class="mini" hidden>highlight cluster</button>
+          </dd>
           <dt>n DEGs</dt>       <dd id="p-ndegs">—</dd>
           <dt>edist (vs NTC)</dt><dd id="p-edist">—</dd>
         </dl>
@@ -42,6 +45,6 @@
   <footer>
     <span>n = 1,655 · <a href="https://doi.org/10.1101/2024.11.03.621734" target="_blank" rel="noopener">Doctor et&nbsp;al., bioRxiv 2024</a> · <a href="https://github.com/y-doctor/KOLF2.1J_Perturbation_Cell_Atlas" target="_blank" rel="noopener">source</a></span>
   </footer>
-  <script src="js/main.js?v=4"></script>
+  <script src="js/main.js?v=5"></script>
 </body>
 </html>
