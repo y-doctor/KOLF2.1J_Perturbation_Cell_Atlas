@@ -1,12 +1,12 @@
 /* KOLF2.1J Perturbation Atlas viewer
-   Tabs: MDE (#mde), Clustermaps (#clustermap, toggle pert/gene),
+   Tabs: Overview (#home), MDE (#mde), Clustermaps (#clustermap, toggle pert/gene),
          Gene query (#genequery), Clusters (#clusters), Gene panel (#panel).
 */
 
 // ============================================================================
 // Router
 // ============================================================================
-const TABS = ['mde', 'clustermap', 'genequery', 'clusters', 'panel'];
+const TABS = ['home', 'mde', 'clustermap', 'genequery', 'clusters', 'panel'];
 const tabButtons = document.querySelectorAll('.tab');
 const views      = Object.fromEntries(
   TABS.map(name => [name, document.getElementById(`view-${name}`)])
@@ -20,7 +20,7 @@ function onCmapShow() {
 }
 
 function showTab(name) {
-  if (!TABS.includes(name)) name = 'mde';
+  if (!TABS.includes(name)) name = 'home';
   for (const t of TABS) {
     const active = (t === name);
     views[t].hidden = !active;
@@ -63,14 +63,11 @@ const MDE = (() => {
     ndegs:   document.getElementById('p-ndegs'),
     edist:   document.getElementById('p-edist'),
     fit:     document.getElementById('p-fit'),
-    sim:     document.getElementById('p-sim'),
     nbr:     document.getElementById('p-nbr'),
   };
 
   let fitnessCache = null;
-  let signaturesCache = null;
-  function ensureFitness()    { return fitnessCache    || (fitnessCache    = fetch('data/mde/fitness.json?v=27').then(r => r.json())); }
-  function ensureSignatures() { return signaturesCache || (signaturesCache = fetch('data/mde/signatures.json?v=27').then(r => r.json())); }
+  function ensureFitness() { return fitnessCache || (fitnessCache = fetch('data/mde/fitness.json?v=28').then(r => r.json())); }
 
   let data = [];
   let leidenLabels = {}, hdbscanLabels = {};
@@ -285,26 +282,6 @@ const MDE = (() => {
       tbody.appendChild(tr);
     }
   }
-  function renderSimList(ol, names) {
-    ol.innerHTML = '';
-    if (!names || names.length === 0) {
-      const li = document.createElement('li');
-      li.innerHTML = '<span class="g" style="color:var(--muted)">—</span>';
-      ol.appendChild(li);
-      return;
-    }
-    for (const name of names) {
-      const i = indexByGene.get(name);
-      const li = document.createElement('li');
-      const g = document.createElement('span');
-      g.className = 'g';
-      g.textContent = name;
-      if (i != null) g.addEventListener('click', () => focusGene(i, { zoom: true }));
-      li.appendChild(g);
-      ol.appendChild(li);
-    }
-  }
-
   function openPanel(idx) {
     const r = data[idx];
     const gene = r.g;
@@ -315,7 +292,6 @@ const MDE = (() => {
     P.ndegs.textContent = fmtWithRank(fmtInt(r.n), nDegsRank.get(gene), totalRanked);
     P.edist.textContent = fmtWithRank(fmtFloat(r.e, 2), edistRank.get(gene), totalRanked);
     P.fit.textContent   = '…';
-    renderSimList(P.sim, null);
     renderNeighbors(P.nbr, nearestNeighbors(idx, 10));
     PANEL.classList.add('open');
     PANEL.setAttribute('aria-hidden', 'false');
@@ -327,15 +303,6 @@ const MDE = (() => {
       const rank = f.z >= 0 ? `pos #${f.rp.toLocaleString()}` : `neg #${f.rn.toLocaleString()}`;
       P.fit.textContent = `${sign}${f.z.toFixed(2)} · ${rank} / ${fit.n_total.toLocaleString()}`;
     }).catch(e => { console.error('fitness load failed', e); P.fit.textContent = '—'; });
-
-    ensureSignatures().then(sigs => {
-      const s = sigs[gene];
-      if (!s) { renderSimList(P.sim, []); return; }
-      renderSimList(P.sim, s.neighbors);
-    }).catch(e => {
-      console.error('signatures load failed', e);
-      renderSimList(P.sim, []);
-    });
   }
   function closePanel() {
     PANEL.classList.remove('open');
@@ -355,7 +322,7 @@ const MDE = (() => {
   }
 
   function init() {
-    return fetch('data/mde.json?v=27').then(r => r.json()).then(payload => {
+    return fetch('data/mde.json?v=28').then(r => r.json()).then(payload => {
       data = payload.points;
       leidenLabels  = payload.leiden_labels  || {};
       hdbscanLabels = payload.hdbscan_labels || {};
@@ -694,9 +661,9 @@ const Clustermap = makeClustermap({
   mainId:   'cmap-main', sideId:   'cmap-side',
   searchId: 'csearch',   suggestId:'csuggest',
   hintId:   'chint',     metaId:   'cmeta',     resetId: 'creset',
-  metaPath: 'data/clustermap/meta.json?v=27',
-  mainPath: 'data/clustermap/corr_int8.bin?v=27',
-  sidePath: 'data/clustermap/corr_side_int8.bin?v=27',
+  metaPath: 'data/clustermap/meta.json?v=28',
+  mainPath: 'data/clustermap/corr_int8.bin?v=28',
+  sidePath: 'data/clustermap/corr_side_int8.bin?v=28',
   mainZmin: -0.2, mainZmax: 0.2,
   sideZmin: -0.5, sideZmax: 0.5,
 });
@@ -707,9 +674,9 @@ const GeneClustermap = makeClustermap({
   mainId:   'gmap-main', sideId:   'gmap-side',
   searchId: 'gsearch',   suggestId:'gsuggest',
   hintId:   'ghint',     metaId:   'gmeta',     resetId: 'greset',
-  metaPath: 'data/genemap/meta.json?v=27',
-  mainPath: 'data/genemap/gene_corr_int8.bin?v=27',
-  sidePath: 'data/genemap/gene_corr_side_int8.bin?v=27',
+  metaPath: 'data/genemap/meta.json?v=28',
+  mainPath: 'data/genemap/gene_corr_int8.bin?v=28',
+  sidePath: 'data/genemap/gene_corr_side_int8.bin?v=28',
   mainZmin: -0.2, mainZmax: 0.2,
   sideZmin: -0.5, sideZmax: 0.5,
 });
@@ -735,8 +702,8 @@ const GeneQuery = (() => {
 
   const MODES = {
     gene: {
-      indexPath: 'data/genes/index.json?v=27',
-      topkPath:  'data/genes/topk.json?v=27',
+      indexPath: 'data/genes/index.json?v=28',
+      topkPath:  'data/genes/topk.json?v=28',
       indexKey:  'genes',       // index.json key holding the searchable list
       counterKey:'n_perts',     // index.json key for the "other-axis" size
       entity:    'feature gene',
@@ -752,8 +719,8 @@ const GeneQuery = (() => {
       defaultPick: 'POU5F1',
     },
     pert: {
-      indexPath: 'data/perts/index.json?v=27',
-      topkPath:  'data/perts/topk.json?v=27',
+      indexPath: 'data/perts/index.json?v=28',
+      topkPath:  'data/perts/topk.json?v=28',
       indexKey:  'perts',
       counterKey:'n_genes',
       entity:    'perturbed gene',
@@ -766,7 +733,7 @@ const GeneQuery = (() => {
       axisX:     'NTC z-score',
       axisY:     '# genes',
       hoverUnit: 'genes',
-      defaultPick: 'POU5F1',
+      defaultPick: 'DNMT1',
     },
   };
 
@@ -778,7 +745,7 @@ const GeneQuery = (() => {
   };
   let mode = 'gene';
   let activeSugg = -1;
-  let autoOpened = false;
+  const autoOpened = { gene: false, pert: false };
 
   function cfg() { return MODES[mode]; }
   function S()   { return state[mode]; }
@@ -828,18 +795,22 @@ const GeneQuery = (() => {
     META.textContent = `${s.keys.length.toLocaleString()} ${c.entity}s · ${s.other.toLocaleString()} ${c.other}`;
   }
 
+  function autoOpenForCurrentMode() {
+    if (autoOpened[mode]) return;
+    const m = mode, c = MODES[m], s = state[m];
+    const p = s.indexPromise || ensureIndex(m);
+    p.then(() => {
+      if (autoOpened[m] || mode !== m) return;
+      if (s.keys.includes(c.defaultPick) && RESULTS && RESULTS.hidden) {
+        autoOpened[m] = true;
+        selectItem(c.defaultPick);
+      }
+    }).catch(() => {});
+  }
+
   function onShow() {
     if (SEARCH) SEARCH.focus();
-    // On first visit, auto-open to POU5F1 for immediate context.
-    if (autoOpened) return;
-    const p = state.gene.indexPromise || ensureIndex('gene');
-    p.then(() => {
-      if (autoOpened) return;
-      if (mode === 'gene' && state.gene.keys.includes('POU5F1') && RESULTS && RESULTS.hidden) {
-        autoOpened = true;
-        selectItem('POU5F1');
-      }
-    });
+    autoOpenForCurrentMode();
   }
 
   function applyMode() {
@@ -856,6 +827,7 @@ const GeneQuery = (() => {
     fillTable(UP, []); fillTable(DN, []);
     ensureIndex(mode).then(refreshMeta).catch(() => {});
     SEARCH.focus();
+    autoOpenForCurrentMode();
   }
 
   function attachEvents() {
@@ -1087,7 +1059,7 @@ const Clusters = (() => {
   function ensureData() {
     if (loaded) return loaded;
     META.textContent = 'Loading cluster summaries…';
-    loaded = fetch('data/clusters/summary.json?v=27').then(r => r.json()).then(d => {
+    loaded = fetch('data/clusters/summary.json?v=28').then(r => r.json()).then(d => {
       data = d;
       META.textContent = meta();
       return d;
@@ -1247,7 +1219,7 @@ const Panel = (() => {
   function ensurePertMeta() {
     if (pmLoaded) return pmLoaded;
     META.textContent = 'Loading perturbation index…';
-    pmLoaded = fetch('data/panel/all/meta.json?v=27').then(r => r.json()).then(m => {
+    pmLoaded = fetch('data/panel/all/meta.json?v=28').then(r => r.json()).then(m => {
       pmMeta = m;
       pmMeta.genes.forEach((g, i) => geneIdx.set(g, i));
       pmMeta.perts.forEach((p, i) => pertIdx.set(p, i));
@@ -1267,7 +1239,7 @@ const Panel = (() => {
     const cs = pmMeta.chunk_size, rb = pmMeta.row_bytes;
     const chunkIdx = Math.floor(pi / cs);
     const offset   = (pi % cs) * rb;
-    const url = `data/panel/all/chunk_${chunkIdx}.bin?v=27`;
+    const url = `data/panel/all/chunk_${chunkIdx}.bin?v=28`;
     return fetch(url, { headers: { Range: `bytes=${offset}-${offset + rb - 1}` } })
       .then(r => {
         if (!r.ok && r.status !== 206) throw new Error(`HTTP ${r.status}`);
@@ -1297,8 +1269,8 @@ const Panel = (() => {
   function ensureClusterMeans() {
     if (clLoaded) return clLoaded;
     clLoaded = Promise.all([
-      fetch('data/clusters/means_meta.json?v=27').then(r => r.json()),
-      fetch('data/clusters/means.bin?v=27').then(r => r.arrayBuffer()),
+      fetch('data/clusters/means_meta.json?v=28').then(r => r.json()),
+      fetch('data/clusters/means.bin?v=28').then(r => r.arrayBuffer()),
     ]).then(([m, buf]) => {
       clMeta = m;
       clMatrix = new Int8Array(buf);
@@ -1310,7 +1282,7 @@ const Panel = (() => {
 
   function ensureClusterSummary() {
     if (clSummaryLoaded) return clSummaryLoaded;
-    clSummaryLoaded = fetch('data/clusters/summary.json?v=27').then(r => r.json()).then(s => {
+    clSummaryLoaded = fetch('data/clusters/summary.json?v=28').then(r => r.json()).then(s => {
       clSummary = s;
     }).catch(err => { console.warn('Cluster summary load failed', err); });
     return clSummaryLoaded;
@@ -1387,6 +1359,8 @@ const Panel = (() => {
         if (a.id === -1) return 1; if (b.id === -1) return -1; return a.id - b.id;
       });
       const xLabels = hdb.map(c => c.id === -1 ? 'noise' : String(c.id));
+      // Hover content per column: cluster name + strong-pert count + member list.
+      // Kept out of the tick label so the x-axis stays legible.
       const colLabels = hdb.map(c => {
         const head = c.id === -1 ? 'Unclustered (noise)'
                    : (c.label ? `Cluster ${c.id} · ${c.label}` : `Cluster ${c.id}`);
@@ -1596,4 +1570,4 @@ Panel.init();
 
 // Initial route
 const initial = location.hash.replace('#', '');
-showTab(TABS.includes(initial) ? initial : 'mde');
+showTab(TABS.includes(initial) ? initial : 'home');

@@ -4,17 +4,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>KOLF2.1J Perturbation Atlas</title>
-  <link rel="stylesheet" href="css/style.css?v=27">
+  <link rel="stylesheet" href="css/style.css?v=28">
   <script src="https://cdn.plot.ly/plotly-cartesian-2.35.2.min.js" charset="utf-8"></script>
 </head>
 <body>
   <header>
     <div class="title">
       <h1>KOLF2.1J Perturbation Atlas</h1>
-      <p>1,655 strong perturbations</p>
+      <p>11,692 perturbed genes · &gt;2.5M single cells · 1,655 strong perturbations</p>
     </div>
     <nav class="tabs" role="tablist" aria-label="Views">
-      <button class="tab active" role="tab" aria-selected="true"  data-tab="mde">MDE</button>
+      <button class="tab active" role="tab" aria-selected="true"  data-tab="home">Overview</button>
+      <button class="tab"        role="tab" aria-selected="false" data-tab="mde">MDE</button>
       <button class="tab"        role="tab" aria-selected="false" data-tab="clustermap">Clustermaps</button>
       <button class="tab"        role="tab" aria-selected="false" data-tab="genequery">Gene query</button>
       <button class="tab"        role="tab" aria-selected="false" data-tab="clusters">Clusters</button>
@@ -23,8 +24,57 @@
   </header>
 
   <main>
+    <!-- Overview / Home view -->
+    <section id="view-home" class="view active" role="tabpanel" aria-labelledby="tab-home">
+      <div class="home-body">
+        <h2>A genome-scale CRISPRi Perturbation Cell Atlas of pluripotency</h2>
+        <p class="lede">Transcriptional phenotypes for 11,692 perturbed genes across more than 2.5 million KOLF2.1J human iPSCs, used to build a cell map of the pluripotent state and to nominate novel metabolic and pluripotency regulators.</p>
+
+        <section class="home-section">
+          <h3>Abstract</h3>
+          <p>Comprehensively mapping the relationship between genotype and phenotype offers essential insights into how a cell's state arises from its genetic components. Towards this goal, we generated an expressed genome-scale CRISPRi Perturbation Cell Atlas in KOLF2.1J human induced pluripotent stem cells (hiPSCs), mapping transcriptional phenotypes associated with 11,692 perturbed genes across &gt;2.5 million single cells. Using correlations between perturbed phenotypes, we created a cell map of the pluripotent state, demonstrating rich recapitulation of functionally related protein complexes. We then explored the atlas to uncover novel metabolic factors (<em>ZBTB41</em>) and pluripotency regulators (<em>RNF7</em>), validating their functions through metabolic tracing, immunofluorescence, and protein-protein interaction assays. Finally, we leveraged the atlas to generate the first genome-scale screen of RNA editing modulators assayed via direct transcriptome-wide RNA editing, uncovering and mechanistically validating <em>DBR1</em> as a potent regulator. Taken together, our study presents a comprehensive resource for interrogating the regulatory networks governing pluripotency.</p>
+        </section>
+
+        <section class="home-section">
+          <h3>Using the viewer</h3>
+          <dl class="home-tabs">
+            <dt><a href="#mde">MDE</a></dt>
+            <dd>2D embedding of the 1,655 strong perturbations, colored by HDBSCAN cluster. Click a point for per-perturbation metadata, D14 fitness, and nearest neighbors.</dd>
+            <dt><a href="#clustermap">Clustermaps</a></dt>
+            <dd>Pairwise Pearson-<em>r</em> heatmaps of perturbation signatures and of feature-gene z-score profiles. Toggle between <em>Strong perturbations</em> and <em>Feature genes</em> at the top of the tab.</dd>
+            <dt><a href="#genequery">Gene query</a></dt>
+            <dd>Pick a feature gene to see which perturbations most strongly up- or down-regulate it, or pick a perturbed gene to see its top up/down transcripts. Histogram bars are interactive &mdash; hover to see which genes/perts fall in each bin.</dd>
+            <dt><a href="#clusters">Clusters</a></dt>
+            <dd>Browse HDBSCAN clusters of strong perturbations with curated labels. Each cluster shows the mean NTC z-score top up / down genes and its member perturbations (click any member to jump to the MDE).</dd>
+            <dt><a href="#panel">Gene panel</a></dt>
+            <dd>Pick up to 10 feature genes (rows) and up to 10 perturbations, or switch the column axis to HDBSCAN clusters, for a pairwise mean NTC z-score heatmap.</dd>
+          </dl>
+        </section>
+
+        <section class="home-section">
+          <h3>Data availability</h3>
+          <ul class="home-links">
+            <li>Raw FASTQs: <a href="https://www.ncbi.nlm.nih.gov/bioproject/PRJNA1173491" target="_blank" rel="noopener">SRA BioProject PRJNA1173491</a></li>
+            <li>Aggregated <code>.h5mu</code> (gene expression + CRISPR reads) from 10x Cell Ranger: <a href="https://figshare.com/s/ee85bb1880921326249b" target="_blank" rel="noopener">figshare</a> &middot; DOI:<a href="https://doi.org/10.25452/figshare.plus.27261219" target="_blank" rel="noopener">10.25452/figshare.plus.27261219</a></li>
+          </ul>
+        </section>
+
+        <section class="home-section">
+          <h3>Code availability</h3>
+          <ul class="home-links">
+            <li>Analysis pipeline and Jupyter notebooks: <a href="https://github.com/y-doctor/KOLF2.1J_Perturbation_Cell_Atlas" target="_blank" rel="noopener">github.com/y-doctor/KOLF2.1J_Perturbation_Cell_Atlas</a></li>
+          </ul>
+        </section>
+
+        <section class="home-section">
+          <h3>Citation</h3>
+          <p class="cite">Doctor et al. <em>A genome-scale CRISPRi Perturbation Cell Atlas of KOLF2.1J hiPSCs</em>. bioRxiv 2024. doi:<a href="https://doi.org/10.1101/2024.11.03.621734" target="_blank" rel="noopener">10.1101/2024.11.03.621734</a></p>
+        </section>
+      </div>
+    </section>
+
     <!-- MDE view -->
-    <section id="view-mde" class="view active" role="tabpanel" aria-labelledby="tab-mde">
+    <section id="view-mde" class="view" role="tabpanel" aria-labelledby="tab-mde" hidden>
       <div class="view-controls">
         <input id="search" type="search" placeholder="Search gene…" autocomplete="off" spellcheck="false">
         <button id="reset" title="Reset view">Reset</button>
@@ -44,12 +94,8 @@
               </dd>
               <dt>n DEGs</dt>      <dd id="p-ndegs">—</dd>
               <dt>edist (vs NTC)</dt><dd id="p-edist">—</dd>
-              <dt>fitness</dt>     <dd id="p-fit">—</dd>
+              <dt>fitness <span class="muted-tag">D14</span></dt><dd id="p-fit">—</dd>
             </dl>
-            <section>
-              <h3>Similar perturbations <span class="muted-tag">Pearson on z-scores</span></h3>
-              <ol class="neighbors" id="p-sim"></ol>
-            </section>
             <section>
               <h3>Nearest neighbors on MDE</h3>
               <ol class="neighbors" id="p-nbr"></ol>
@@ -224,6 +270,6 @@
     <span><a href="https://doi.org/10.1101/2024.11.03.621734" target="_blank" rel="noopener">Doctor et&nbsp;al., bioRxiv 2024</a> · <a href="https://github.com/y-doctor/KOLF2.1J_Perturbation_Cell_Atlas" target="_blank" rel="noopener">source</a></span>
   </footer>
 
-  <script src="js/main.js?v=27"></script>
+  <script src="js/main.js?v=28"></script>
 </body>
 </html>

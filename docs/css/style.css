@@ -425,6 +425,78 @@ button.mini.on    { background: var(--accent); color: var(--accent-fg); border-c
   .cl-list { width: 100%; max-height: 40vh; border-right: 0; border-bottom: 1px solid var(--line); }
 }
 
+/* Home / overview layout */
+#view-home { overflow: auto; }
+.home-body {
+  padding: 28px 32px 48px;
+  max-width: 860px;
+  margin: 0 auto;
+  width: 100%;
+  line-height: 1.55;
+}
+.home-body h2 {
+  margin: 0 0 8px;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.home-body .lede {
+  margin: 0 0 22px;
+  color: var(--muted);
+  font-size: 14px;
+}
+.home-section { margin-top: 22px; }
+.home-section h3 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.home-section p {
+  margin: 0 0 8px;
+  font-size: 14px;
+  text-align: justify;
+}
+.home-section p.cite { text-align: left; color: var(--muted); }
+.home-section a {
+  color: var(--fg);
+  text-decoration: underline;
+  text-decoration-color: var(--line);
+  text-underline-offset: 2px;
+}
+.home-section a:hover { text-decoration-color: var(--fg); }
+.home-links { margin: 0; padding: 0 0 0 18px; font-size: 14px; }
+.home-links li { margin: 4px 0; }
+.home-links code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12.5px;
+  padding: 1px 5px;
+  background: #f3f3f3;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+.home-tabs {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  gap: 4px 14px;
+  margin: 4px 0 0;
+  font-size: 14px;
+}
+.home-tabs dt { font-weight: 600; }
+.home-tabs dt a {
+  color: var(--fg);
+  text-decoration: none;
+}
+.home-tabs dt a:hover { text-decoration: underline; }
+.home-tabs dd { margin: 0 0 10px; color: var(--fg); }
+@media (max-width: 720px) {
+  .home-tabs { grid-template-columns: 1fr; }
+  .home-tabs dd { margin-bottom: 14px; }
+  .home-body { padding: 20px 18px 32px; }
+}
+
 /* Gene panel layout */
 .pn-body { display: flex; flex-direction: column; padding: 14px 24px 24px; overflow: auto; gap: 12px; }
 .pn-pickers {
