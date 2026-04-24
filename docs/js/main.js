@@ -67,7 +67,7 @@ const MDE = (() => {
   };
 
   let fitnessCache = null;
-  function ensureFitness() { return fitnessCache || (fitnessCache = fetch('data/mde/fitness.json?v=32').then(r => r.json())); }
+  function ensureFitness() { return fitnessCache || (fitnessCache = fetch('data/mde/fitness.json?v=33').then(r => r.json())); }
 
   let data = [];
   let leidenLabels = {}, hdbscanLabels = {};
@@ -322,7 +322,7 @@ const MDE = (() => {
   }
 
   function init() {
-    return fetch('data/mde.json?v=32').then(r => r.json()).then(payload => {
+    return fetch('data/mde.json?v=33').then(r => r.json()).then(payload => {
       data = payload.points;
       leidenLabels  = payload.leiden_labels  || {};
       hdbscanLabels = payload.hdbscan_labels || {};
@@ -661,9 +661,9 @@ const Clustermap = makeClustermap({
   mainId:   'cmap-main', sideId:   'cmap-side',
   searchId: 'csearch',   suggestId:'csuggest',
   hintId:   'chint',     metaId:   'cmeta',     resetId: 'creset',
-  metaPath: 'data/clustermap/meta.json?v=32',
-  mainPath: 'data/clustermap/corr_int8.bin?v=32',
-  sidePath: 'data/clustermap/corr_side_int8.bin?v=32',
+  metaPath: 'data/clustermap/meta.json?v=33',
+  mainPath: 'data/clustermap/corr_int8.bin?v=33',
+  sidePath: 'data/clustermap/corr_side_int8.bin?v=33',
   mainZmin: -0.2, mainZmax: 0.2,
   sideZmin: -0.5, sideZmax: 0.5,
 });
@@ -674,9 +674,9 @@ const GeneClustermap = makeClustermap({
   mainId:   'gmap-main', sideId:   'gmap-side',
   searchId: 'gsearch',   suggestId:'gsuggest',
   hintId:   'ghint',     metaId:   'gmeta',     resetId: 'greset',
-  metaPath: 'data/genemap/meta.json?v=32',
-  mainPath: 'data/genemap/gene_corr_int8.bin?v=32',
-  sidePath: 'data/genemap/gene_corr_side_int8.bin?v=32',
+  metaPath: 'data/genemap/meta.json?v=33',
+  mainPath: 'data/genemap/gene_corr_int8.bin?v=33',
+  sidePath: 'data/genemap/gene_corr_side_int8.bin?v=33',
   mainZmin: -0.2, mainZmax: 0.2,
   sideZmin: -0.5, sideZmax: 0.5,
 });
@@ -702,8 +702,8 @@ const GeneQuery = (() => {
 
   const MODES = {
     gene: {
-      indexPath: 'data/genes/index.json?v=32',
-      topkPath:  'data/genes/topk.json?v=32',
+      indexPath: 'data/genes/index.json?v=33',
+      topkPath:  'data/genes/topk.json?v=33',
       indexKey:  'genes',       // index.json key holding the searchable list
       counterKey:'n_perts',     // index.json key for the "other-axis" size
       entity:    'feature gene',
@@ -719,8 +719,8 @@ const GeneQuery = (() => {
       defaultPick: 'POU5F1',
     },
     pert: {
-      indexPath: 'data/perts/index.json?v=32',
-      topkPath:  'data/perts/topk.json?v=32',
+      indexPath: 'data/perts/index.json?v=33',
+      topkPath:  'data/perts/topk.json?v=33',
       indexKey:  'perts',
       counterKey:'n_genes',
       entity:    'perturbed gene',
@@ -1037,7 +1037,7 @@ const Clusters = (() => {
   function ensureData() {
     if (loaded) return loaded;
     META.textContent = 'Loading cluster summaries…';
-    loaded = fetch('data/clusters/summary.json?v=32').then(r => r.json()).then(d => {
+    loaded = fetch('data/clusters/summary.json?v=33').then(r => r.json()).then(d => {
       data = d;
       META.textContent = meta();
       return d;
@@ -1197,7 +1197,7 @@ const Panel = (() => {
   function ensurePertMeta() {
     if (pmLoaded) return pmLoaded;
     META.textContent = 'Loading perturbation index…';
-    pmLoaded = fetch('data/panel/all/meta.json?v=32').then(r => r.json()).then(m => {
+    pmLoaded = fetch('data/panel/all/meta.json?v=33').then(r => r.json()).then(m => {
       pmMeta = m;
       pmMeta.genes.forEach((g, i) => geneIdx.set(g, i));
       pmMeta.perts.forEach((p, i) => pertIdx.set(p, i));
@@ -1217,7 +1217,7 @@ const Panel = (() => {
     const cs = pmMeta.chunk_size, rb = pmMeta.row_bytes;
     const chunkIdx = Math.floor(pi / cs);
     const offset   = (pi % cs) * rb;
-    const url = `data/panel/all/chunk_${chunkIdx}.bin?v=32`;
+    const url = `data/panel/all/chunk_${chunkIdx}.bin?v=33`;
     return fetch(url, { headers: { Range: `bytes=${offset}-${offset + rb - 1}` } })
       .then(r => {
         if (!r.ok && r.status !== 206) throw new Error(`HTTP ${r.status}`);
@@ -1247,8 +1247,8 @@ const Panel = (() => {
   function ensureClusterMeans() {
     if (clLoaded) return clLoaded;
     clLoaded = Promise.all([
-      fetch('data/clusters/means_meta.json?v=32').then(r => r.json()),
-      fetch('data/clusters/means.bin?v=32').then(r => r.arrayBuffer()),
+      fetch('data/clusters/means_meta.json?v=33').then(r => r.json()),
+      fetch('data/clusters/means.bin?v=33').then(r => r.arrayBuffer()),
     ]).then(([m, buf]) => {
       clMeta = m;
       clMatrix = new Int8Array(buf);
@@ -1260,7 +1260,7 @@ const Panel = (() => {
 
   function ensureClusterSummary() {
     if (clSummaryLoaded) return clSummaryLoaded;
-    clSummaryLoaded = fetch('data/clusters/summary.json?v=32').then(r => r.json()).then(s => {
+    clSummaryLoaded = fetch('data/clusters/summary.json?v=33').then(r => r.json()).then(s => {
       clSummary = s;
     }).catch(err => { console.warn('Cluster summary load failed', err); });
     return clSummaryLoaded;
