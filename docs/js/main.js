@@ -67,7 +67,7 @@ const MDE = (() => {
   };
 
   let fitnessCache = null;
-  function ensureFitness() { return fitnessCache || (fitnessCache = fetch('data/mde/fitness.json?v=28').then(r => r.json())); }
+  function ensureFitness() { return fitnessCache || (fitnessCache = fetch('data/mde/fitness.json?v=29').then(r => r.json())); }
 
   let data = [];
   let leidenLabels = {}, hdbscanLabels = {};
@@ -322,7 +322,7 @@ const MDE = (() => {
   }
 
   function init() {
-    return fetch('data/mde.json?v=28').then(r => r.json()).then(payload => {
+    return fetch('data/mde.json?v=29').then(r => r.json()).then(payload => {
       data = payload.points;
       leidenLabels  = payload.leiden_labels  || {};
       hdbscanLabels = payload.hdbscan_labels || {};
@@ -661,9 +661,9 @@ const Clustermap = makeClustermap({
   mainId:   'cmap-main', sideId:   'cmap-side',
   searchId: 'csearch',   suggestId:'csuggest',
   hintId:   'chint',     metaId:   'cmeta',     resetId: 'creset',
-  metaPath: 'data/clustermap/meta.json?v=28',
-  mainPath: 'data/clustermap/corr_int8.bin?v=28',
-  sidePath: 'data/clustermap/corr_side_int8.bin?v=28',
+  metaPath: 'data/clustermap/meta.json?v=29',
+  mainPath: 'data/clustermap/corr_int8.bin?v=29',
+  sidePath: 'data/clustermap/corr_side_int8.bin?v=29',
   mainZmin: -0.2, mainZmax: 0.2,
   sideZmin: -0.5, sideZmax: 0.5,
 });
@@ -674,9 +674,9 @@ const GeneClustermap = makeClustermap({
   mainId:   'gmap-main', sideId:   'gmap-side',
   searchId: 'gsearch',   suggestId:'gsuggest',
   hintId:   'ghint',     metaId:   'gmeta',     resetId: 'greset',
-  metaPath: 'data/genemap/meta.json?v=28',
-  mainPath: 'data/genemap/gene_corr_int8.bin?v=28',
-  sidePath: 'data/genemap/gene_corr_side_int8.bin?v=28',
+  metaPath: 'data/genemap/meta.json?v=29',
+  mainPath: 'data/genemap/gene_corr_int8.bin?v=29',
+  sidePath: 'data/genemap/gene_corr_side_int8.bin?v=29',
   mainZmin: -0.2, mainZmax: 0.2,
   sideZmin: -0.5, sideZmax: 0.5,
 });
@@ -702,8 +702,8 @@ const GeneQuery = (() => {
 
   const MODES = {
     gene: {
-      indexPath: 'data/genes/index.json?v=28',
-      topkPath:  'data/genes/topk.json?v=28',
+      indexPath: 'data/genes/index.json?v=29',
+      topkPath:  'data/genes/topk.json?v=29',
       indexKey:  'genes',       // index.json key holding the searchable list
       counterKey:'n_perts',     // index.json key for the "other-axis" size
       entity:    'feature gene',
@@ -719,8 +719,8 @@ const GeneQuery = (() => {
       defaultPick: 'POU5F1',
     },
     pert: {
-      indexPath: 'data/perts/index.json?v=28',
-      topkPath:  'data/perts/topk.json?v=28',
+      indexPath: 'data/perts/index.json?v=29',
+      topkPath:  'data/perts/topk.json?v=29',
       indexKey:  'perts',
       counterKey:'n_genes',
       entity:    'perturbed gene',
@@ -956,20 +956,9 @@ const GeneQuery = (() => {
     const colors = binCenters.map(c =>
       c >= 0.25 ? '#d62728' : (c <= -0.25 ? '#1f77b4' : '#bbb')
     );
-    // Threshold z at the Kth highest / Kth lowest entity
-    const upZ = entry.up && entry.up.length ? entry.up[entry.up.length - 1][1] : null;
-    const dnZ = entry.dn && entry.dn.length ? entry.dn[entry.dn.length - 1][1] : null;
-    const shapes = [];
-    if (upZ != null) shapes.push({
-      type: 'line', xref: 'x', yref: 'paper', x0: upZ, x1: upZ, y0: 0, y1: 1,
-      line: { color: '#d62728', width: 1, dash: 'dot' },
-    });
-    if (dnZ != null) shapes.push({
-      type: 'line', xref: 'x', yref: 'paper', x0: dnZ, x1: dnZ, y0: 0, y1: 1,
-      line: { color: '#1f77b4', width: 1, dash: 'dot' },
-    });
     // Bucket the K up + K dn named entities into histogram bins so each bar's
-    // hover tooltip lists the named entities falling in that z range.
+    // hover tooltip lists the named entities falling in that z range (names
+    // only exist for the top-K up / bottom-K down; other bins hover as counts).
     const nBins = counts.length;
     const perBin = Array.from({ length: nBins }, () => ({ up: [], dn: [] }));
     const binFor = (z) => {
@@ -988,42 +977,31 @@ const GeneQuery = (() => {
     (entry.dn || []).forEach(([name, z]) => {
       const b = binFor(z); if (b >= 0) perBin[b].dn.push([name, z]);
     });
-    const customdata = perBin.map(({ up, dn }) => {
+    // Two custom fields per bar: the count line + the optional name list.
+    // Using two array-of-arrays avoids hovermode='x' mangling a single string.
+    const customdata = perBin.map(({ up, dn }, i) => {
       const lines = [];
       up.forEach(([n, z]) => lines.push(`<span style="color:#d62728">▲ ${n} (${z.toFixed(2)})</span>`));
       dn.forEach(([n, z]) => lines.push(`<span style="color:#1f77b4">▼ ${n} (${z.toFixed(2)})</span>`));
-      return lines.length ? '<br>' + lines.join('<br>') : '';
+      return [counts[i], lines.length ? '<br>' + lines.join('<br>') : ''];
     });
 
-    const annotations = [];
-    if (upZ != null) annotations.push({
-      x: 1, y: 0.98, xref: 'paper', yref: 'paper',
-      text: `top ${s.K} ≥ ${upZ.toFixed(2)}`,
-      showarrow: false, font: { size: 10, color: '#d62728' },
-      xanchor: 'right', yanchor: 'top',
-    });
-    if (dnZ != null) annotations.push({
-      x: 0, y: 0.98, xref: 'paper', yref: 'paper',
-      text: `bottom ${s.K} ≤ ${dnZ.toFixed(2)}`,
-      showarrow: false, font: { size: 10, color: '#1f77b4' },
-      xanchor: 'left', yanchor: 'top',
-    });
     Plotly.react(HIST, [{
       type: 'bar',
       x: binCenters, y: counts,
       marker: { color: colors, line: { width: 0 } },
       width: binCenters.length > 1 ? (binCenters[1] - binCenters[0]) * 0.9 : 0.2,
       customdata,
-      hovertemplate: `z ≈ %{x:.2f}<br>%{y} ${c.hoverUnit}%{customdata}<extra></extra>`,
+      hovertemplate: `z ≈ %{x:.2f}<br>%{customdata[0]} ${c.hoverUnit}%{customdata[1]}<extra></extra>`,
     }], {
       margin: { l: 50, r: 16, t: 22, b: 38 },
       xaxis: { title: { text: c.axisX, font: { size: 11 } }, zeroline: true, zerolinecolor: '#bbb' },
       yaxis: { title: { text: c.axisY, font: { size: 11 } } },
       bargap: 0.05,
-      hovermode: 'x',
+      hovermode: 'closest',
+      hoverlabel: { align: 'left', bgcolor: '#fff', bordercolor: '#ccc' },
       showlegend: false,
       plot_bgcolor: '#fff', paper_bgcolor: '#fff',
-      shapes, annotations,
     }, {
       responsive: true, displaylogo: false,
       modeBarButtonsToRemove: ['lasso2d','select2d','autoScale2d','toggleSpikelines','zoom2d','pan2d','zoomIn2d','zoomOut2d'],
@@ -1059,7 +1037,7 @@ const Clusters = (() => {
   function ensureData() {
     if (loaded) return loaded;
     META.textContent = 'Loading cluster summaries…';
-    loaded = fetch('data/clusters/summary.json?v=28').then(r => r.json()).then(d => {
+    loaded = fetch('data/clusters/summary.json?v=29').then(r => r.json()).then(d => {
       data = d;
       META.textContent = meta();
       return d;
@@ -1219,7 +1197,7 @@ const Panel = (() => {
   function ensurePertMeta() {
     if (pmLoaded) return pmLoaded;
     META.textContent = 'Loading perturbation index…';
-    pmLoaded = fetch('data/panel/all/meta.json?v=28').then(r => r.json()).then(m => {
+    pmLoaded = fetch('data/panel/all/meta.json?v=29').then(r => r.json()).then(m => {
       pmMeta = m;
       pmMeta.genes.forEach((g, i) => geneIdx.set(g, i));
       pmMeta.perts.forEach((p, i) => pertIdx.set(p, i));
@@ -1239,7 +1217,7 @@ const Panel = (() => {
     const cs = pmMeta.chunk_size, rb = pmMeta.row_bytes;
     const chunkIdx = Math.floor(pi / cs);
     const offset   = (pi % cs) * rb;
-    const url = `data/panel/all/chunk_${chunkIdx}.bin?v=28`;
+    const url = `data/panel/all/chunk_${chunkIdx}.bin?v=29`;
     return fetch(url, { headers: { Range: `bytes=${offset}-${offset + rb - 1}` } })
       .then(r => {
         if (!r.ok && r.status !== 206) throw new Error(`HTTP ${r.status}`);
@@ -1269,8 +1247,8 @@ const Panel = (() => {
   function ensureClusterMeans() {
     if (clLoaded) return clLoaded;
     clLoaded = Promise.all([
-      fetch('data/clusters/means_meta.json?v=28').then(r => r.json()),
-      fetch('data/clusters/means.bin?v=28').then(r => r.arrayBuffer()),
+      fetch('data/clusters/means_meta.json?v=29').then(r => r.json()),
+      fetch('data/clusters/means.bin?v=29').then(r => r.arrayBuffer()),
     ]).then(([m, buf]) => {
       clMeta = m;
       clMatrix = new Int8Array(buf);
@@ -1282,7 +1260,7 @@ const Panel = (() => {
 
   function ensureClusterSummary() {
     if (clSummaryLoaded) return clSummaryLoaded;
-    clSummaryLoaded = fetch('data/clusters/summary.json?v=28').then(r => r.json()).then(s => {
+    clSummaryLoaded = fetch('data/clusters/summary.json?v=29').then(r => r.json()).then(s => {
       clSummary = s;
     }).catch(err => { console.warn('Cluster summary load failed', err); });
     return clSummaryLoaded;
